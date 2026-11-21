@@ -10,6 +10,8 @@
   let lastMail = 0;
 
   function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 3200); }
+  /* "FOREVYE ID ile giriş" yarıda kaldıysa (önce giriş gerekti) giriş sonrası oraya dön */
+  function afterLogin() { const p = sessionStorage.getItem("fid.pending"); if (p) { sessionStorage.removeItem("fid.pending"); location.hash = p; return; } go("/profil"); }
   function go(h) { if (location.hash === "#" + h) route(); else location.hash = h; }
   function mailCheck() {
     if (!C.MOCK) return;
@@ -39,7 +41,7 @@
         <form id="f"><label>Kod</label><input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required autofocus><div class="err"></div><button class="btn pri block">Doğrula</button></form>
         <p class="sm mut" style="margin-top:1rem"><a href="#/giris" id="back">Geri dön</a></p>`));
       $("#back").onclick = (e) => { e.preventDefault(); ctx.tf = null; route(); };
-      bindForm("#f", async (d) => { const r = await api.login({ email: ctx.tf.email, challengeId: ctx.tf.challengeId, code: d.code }); ctx.tf = null; user = r.user; go("/profil"); });
+      bindForm("#f", async (d) => { const r = await api.login({ email: ctx.tf.email, challengeId: ctx.tf.challengeId, code: d.code }); ctx.tf = null; user = r.user; afterLogin(); });
       return;
     }
     app(authShell(`<h1>Giriş yap</h1><p class="mut">Tüm FOREVYE uygulamaları için tek hesap.</p>
@@ -52,10 +54,17 @@
       try {
         const r = await api.login(d);
         if (r.twoFactorRequired) { ctx.tf = { method: r.method, challengeId: r.challengeId, email: d.email }; return route(); }
-        user = r.user; go("/profil");
+        user = r.user; afterLogin();
       } catch (e) { if (e.code === "EMAIL_NOT_VERIFIED") { ctx.email = d.email; toast(e.message); go("/dogrula"); } else throw e; }
     });
-    $("#g").onclick = async () => { try { const r = await api.googleLogin(); user = r.user; go("/profil"); } catch (e) { toast(e.message); } mailCheck(); };
+    if (C.MOCK) $("#g").onclick = async () => { try { const r = await api.googleLogin(); user = r.user; afterLogin(); } catch (e) { toast(e.message); } mailCheck(); };
+    else {   // gerçek Google düğmesi (GIS)
+      const box = document.createElement("div"); box.style.cssText = "display:flex;justify-content:center"; $("#g").replaceWith(box);
+      api.googleButton(box, async (cred) => {
+        try { const r = await api.googleSignIn(cred); if (r.twoFactorRequired) { ctx.tf = { method: r.method, challengeId: r.challengeId, email: r.email }; return route(); } user = r.user; afterLogin(); }
+        catch (e) { toast(e.message); }
+      }).catch((e) => { box.innerHTML = '<span class="sm mut">' + esc(e.message) + "</span>"; });
+    }
   }
 
   async function vRegister() {
@@ -182,7 +191,7 @@
   }
 
   /* ---------------- Güvenlik ---------------- */
-  const EVT = { register: "Hesap oluşturuldu", email_verified: "E-posta doğrulandı", login: "Giriş", failed_login: "Başarısız giriş denemesi", new_device: "Yeni cihazdan giriş", logout: "Çıkış", logout_all: "Tüm cihazlardan çıkış", password_reset: "Parola sıfırlandı", username: "Kullanıcı adı değişti", photo: "Profil fotoğrafı güncellendi", photo_removed: "Profil fotoğrafı kaldırıldı", session_revoked: "Oturum sonlandırıldı", app_disconnected: "Uygulama bağlantısı kaldırıldı", "2fa_enabled": "2FA etkinleştirildi", "2fa_disabled": "2FA kapatıldı", google_linked: "Google bağlandı", google_unlinked: "Google bağlantısı kaldırıldı" };
+  const EVT = { google_linked: "Google hesabı bağlandı", google_unlinked: "Google bağlantısı kaldırıldı", app_authorized: "Uygulamaya giriş izni verildi", register: "Hesap oluşturuldu", email_verified: "E-posta doğrulandı", login: "Giriş", failed_login: "Başarısız giriş denemesi", new_device: "Yeni cihazdan giriş", logout: "Çıkış", logout_all: "Tüm cihazlardan çıkış", password_reset: "Parola sıfırlandı", username: "Kullanıcı adı değişti", photo: "Profil fotoğrafı güncellendi", photo_removed: "Profil fotoğrafı kaldırıldı", session_revoked: "Oturum sonlandırıldı", app_disconnected: "Uygulama bağlantısı kaldırıldı", "2fa_enabled": "2FA etkinleştirildi", "2fa_disabled": "2FA kapatıldı", google_linked: "Google bağlandı", google_unlinked: "Google bağlantısı kaldırıldı" };
   async function vSecurity() {
     const u = user = await api.me();
     const [sessions, events] = await Promise.all([api.sessions(), api.events ? api.events().catch(() => []) : []]);
@@ -209,11 +218,16 @@
         <p class="hint">Yaklaşık konum/IP ve son etkinlik gösterilir; hassas konum takibi yapılmaz. Bir uygulamadan çıkmak diğerlerini kapatmaz.</p>
         <div class="list">${sessions.map((x) => `<div class="row sp"><div><b>${esc(x.device)}</b> ${x.current ? '<span class="badge ok">bu cihaz</span>' : ""} <span class="badge">${esc(x.deviceType || "")}</span><div class="mut sm">${esc(x.location)} · Son etkinlik: ${fmt(x.lastActive)} · ${esc(x.status)}</div></div>
           <button class="btn sm" data-rv="${esc(x.id)}">Oturumu kapat</button></div>`).join("")}</div></div>
+      ${C.MOCK ? "" : `<div class="card wide"><h2>Google ile giriş</h2>${u.google.linked ? `<p>Bağlı Google hesabı: <b>${esc(u.google.email)}</b></p><button class="btn dng sm" id="gun">Google bağlantısını kaldır</button><p class="hint">Hesabın parolası yoksa önce “Şifremi unuttum” ile bir parola belirle.</p>` : `<p class="mut sm">Google hesabını bağlarsan onunla da giriş yapabilirsin.</p><div id="gbox" style="margin-top:.5rem"></div>`}</div>`}
       <div class="card wide"><h2>Güvenlik olayları</h2><div class="list">${events.length ? events.map((e) => `<div class="row sp"><span>${esc(EVT[e.type] || e.type)} <span class="mut sm">${esc(e.detail)}</span></span><span class="mut sm">${fmt(e.at)}</span></div>`).join("") : '<div class="mut">Kayıt yok.</div>'}</div>
         <p class="hint">Yeni cihaz girişleri ve şüpheli girişler e-posta ile bildirilir. Şüpheli girişte otomatik hesap kilitleme veya zorunlu ek doğrulama yoktur; yalnızca bildirim gönderilir.</p></div>`);
     bindForm("#tfgo", async (d) => { ctx.tfSetup = await api.twoFaStart(d); vSecurity(); });
     bindForm("#tfon", async (d) => { await api.twoFaEnable({ code: d.code }); ctx.tfSetup = null; toast("2FA etkinleştirildi."); vSecurity(); });
     bindForm("#tfoff", async (d) => { await api.twoFaDisable(d); toast("2FA kapatıldı."); vSecurity(); });
+    if (!C.MOCK) {
+      const gb = $("#gbox"); if (gb) api.googleButton(gb, async (cred) => { try { await api.googleLink(cred); toast("Google hesabı bağlandı."); vSecurity(); } catch (e) { toast(e.message); } }).catch((e) => { gb.textContent = e.message; });
+      const gu = $("#gun"); if (gu) gu.onclick = async () => { if (!confirm("Google bağlantısı kaldırılsın mı?")) return; try { await api.googleUnlink(); toast("Google bağlantısı kaldırıldı."); vSecurity(); } catch (e) { toast(e.message); } };
+    }
     const tfx = $("#tfx"); if (tfx) tfx.onclick = () => { ctx.tfSetup = null; vSecurity(); };
     $("#la").onclick = async () => { if (!confirm("Tüm cihazlardaki oturumlar kapatılsın mı? Bu cihaz dahil.")) return; await api.logoutAll(); user = null; go("/giris"); };
     document.querySelectorAll("[data-rv]").forEach((b) => (b.onclick = async () => { const r = await api.revokeSession(b.dataset.rv); if (r.wasCurrent) { user = null; go("/giris"); } else { toast("Oturum kapatıldı."); vSecurity(); } }));
@@ -231,6 +245,23 @@
     document.querySelectorAll("[data-dc]").forEach((b) => (b.onclick = async () => { if (!confirm("Bu uygulamanın hesabınıza erişimi kaldırılsın mı?")) return; await api.disconnectApp(b.dataset.dc); vApps(); }));
     document.querySelectorAll("[data-cn]").forEach((b) => (b.onclick = async () => { await api.connectApp(b.dataset.cn); vApps(); }));
     document.querySelectorAll("[data-nf]").forEach((f) => f.addEventListener("submit", async (e) => { e.preventDefault(); try { await api.setAppName(f.dataset.nf, new FormData(f).get("n")); toast("Görünen ad kaydedildi."); } catch (x) { toast(x.message); } }));
+  }
+
+  /* ---------------- Uygulama girişi ("FOREVYE ID ile giriş") ---------------- */
+  async function vAuthorize() {
+    const q = new URLSearchParams(location.hash.split("?")[1] || "");
+    const b = { app: q.get("app"), redirect: q.get("redirect"), state: q.get("state"), challenge: q.get("challenge") };
+    if (C.MOCK) throw new Error("Uygulama girişi demo modunda yok (MOCK:false gerekir).");
+    if (!api.hasSession()) { sessionStorage.setItem("fid.pending", location.hash); return go("/giris"); }
+    let info;
+    try { info = await api.authorizeInfo({ app: b.app, redirect: b.redirect }); }
+    catch (e) { if (e.code === "UNAUTHORIZED") sessionStorage.setItem("fid.pending", location.hash); throw e; }
+    app(authShell(`<h1>${esc(info.app.name)} erişim istiyor</h1><p class="mut"><b>${esc(info.email)}</b> hesabınla giriş yapılacak. Parolan uygulamaya verilmez.</p>
+      <div class="row" style="margin:.6rem 0">${info.app.scopes.map((s) => `<span class="badge">${esc(SCOPE_LABEL[s] || s)}</span>`).join("")}</div>
+      <div class="err"></div><button class="btn pri block" id="ok">İzin ver ve devam et</button><button class="btn block" id="no" style="margin-top:.6rem">Vazgeç</button>
+      <p class="hint">Bu izni “Bağlı uygulamalar” sayfasından istediğin zaman kaldırabilirsin.</p>`));
+    $("#ok").onclick = async () => { $("#ok").disabled = true; try { const r = await api.authorize(b); location.href = r.redirect; } catch (e) { $(".err").textContent = e.message; $("#ok").disabled = false; } };
+    $("#no").onclick = () => go("/profil");
   }
 
   /* ---------------- Hesap silme ---------------- */
@@ -274,7 +305,7 @@
   }
 
   /* ---------------- Yönlendirici ---------------- */
-  const routes = { "/giris": vLogin, "/kayit": vRegister, "/dogrula": vVerify, "/sifremi-unuttum": vForgot, "/sifirla": vReset, "/profil": vProfile, "/guvenlik": vSecurity, "/uygulamalar": vApps, "/hesap-sil": vDelete };
+  const routes = { "/giris": vLogin, "/kayit": vRegister, "/dogrula": vVerify, "/sifremi-unuttum": vForgot, "/sifirla": vReset, "/profil": vProfile, "/guvenlik": vSecurity, "/uygulamalar": vApps, "/hesap-sil": vDelete, "/baglan": vAuthorize };
   const guarded = new Set(["/profil", "/guvenlik", "/uygulamalar", "/hesap-sil"]);
   async function route() {
     const p = (location.hash || "#/giris").slice(1).split("?")[0];
@@ -282,7 +313,7 @@
     if (!fn) return go("/giris");
     try {
       if (guarded.has(p)) { if (!api.hasSession()) return go("/giris"); }
-      else if (p === "/giris" && !ctx.tf && api.hasSession()) { try { await api.me(); return go("/profil"); } catch (e) {} }
+      else if (p === "/giris" && !ctx.tf && api.hasSession()) { try { await api.me(); return afterLogin(); } catch (e) {} }
       await fn();
     } catch (e) {
       if (e.code === "UNAUTHORIZED") return go("/giris");

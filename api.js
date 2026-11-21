@@ -301,6 +301,13 @@
    *  Not: bölüm 15'te olmayan uçlar README'de "Varsayım" olarak işaretlidir.
    * ====================================================================== */
   const TK = "fid_tokens";
+  function loadGis() {
+    return new Promise((res, rej) => {
+      if (window.google && google.accounts && google.accounts.id) return res();
+      const s = document.createElement("script"); s.src = "https://accounts.google.com/gsi/client"; s.async = true;
+      s.onload = res; s.onerror = () => rej(new ApiError("Google betiği yüklenemedi.", "NETWORK")); document.head.appendChild(s);
+    });
+  }
   const tokens = () => { try { return JSON.parse(localStorage.getItem(TK)) || {}; } catch (e) { return {}; } };
   async function http(path, { method = "GET", body, form, auth = true, retry = true } = {}) {
     const headers = {};
@@ -345,6 +352,22 @@
       if (!C.GOOGLE_CLIENT_ID) throw new ApiError("GOOGLE_CLIENT_ID config.js içinde tanımlı değil.", "CONFIG");
       throw new ApiError("Google Identity Services bağlantısı henüz eklenmedi (README: Google bölümü).", "NOT_IMPLEMENTED");
     },
+    /* Google Identity Services: resmi düğme kimlik jetonunu (credential) verir; doğrulama sunucuda yapılır */
+    async googleButton(el, onCredential) {
+      if (!C.GOOGLE_CLIENT_ID) throw new ApiError("Google ile giriş için GOOGLE_CLIENT_ID config.js içinde tanımlı olmalı.", "CONFIG");
+      await loadGis();
+      google.accounts.id.initialize({ client_id: C.GOOGLE_CLIENT_ID, callback: (r) => onCredential(r.credential) });
+      google.accounts.id.renderButton(el, { theme: "outline", size: "large", text: "continue_with", locale: "tr", width: 300 });
+    },
+    async googleSignIn(credential) {
+      const r = await http("/identity/oauth/google", { method: "POST", body: { credential }, auth: false });
+      if (r.accessToken) { localStorage.setItem(TK, JSON.stringify({ accessToken: r.accessToken, refreshToken: r.refreshToken })); r.user = await real.me(); }
+      return r;
+    },
+    googleLink: (credential) => http("/identity/oauth/google/link", { method: "POST", body: { credential } }),
+    /* "FOREVYE ID ile giriş": uygulama izni (kod + PKCE). Kodu uygulama sunucuda/istemcide token/exchange ile değiştirir. */
+    authorizeInfo: (b) => http("/identity/authorize/info", { method: "POST", body: b }),
+    authorize: (b) => http("/identity/authorize", { method: "POST", body: b }),
     googleUnlink: () => http("/identity/oauth/google", { method: "DELETE" }),
     deleteAccount: (b) => http("/identity/account", { method: "DELETE", body: b }),
     hasSession: () => !!tokens().accessToken
