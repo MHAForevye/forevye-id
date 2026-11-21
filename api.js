@@ -9,6 +9,8 @@
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const APPS = [
     { id: "sanal-banka", name: "Sanal Banka", scopes: ["kimlik", "bakiye"] },
+    { id: "nexus-pass", name: "Nexus Pass", scopes: ["kimlik", "bakiye"] },
+    { id: "mikro-klima", name: "Mikro-Klima", scopes: ["kimlik"] },
     { id: "print", name: "FOREVYE PRINT", scopes: ["kimlik", "siparis"] },
     { id: "retro-camera", name: "RETRO CAMERA", scopes: ["kimlik", "fotograf"] },
     { id: "mantar-pano", name: "Mantar Pano", scopes: ["kimlik"] }
