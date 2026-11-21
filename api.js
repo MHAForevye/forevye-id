@@ -322,7 +322,7 @@
       localStorage.removeItem(TK);
     }
     let data = null; try { data = await res.json(); } catch (e) {}
-    if (!res.ok) throw new ApiError((data && (data.message || data.error)) || "İstek başarısız (" + res.status + ")", (data && data.code) || "HTTP_" + res.status);
+    if (!res.ok) throw new ApiError((data && (data.message || data.err || (typeof data.error === "string" ? data.error : ""))) || "İstek başarısız (" + res.status + ")", (data && data.code) || "HTTP_" + res.status);
     return data;
   }
   const real = {
