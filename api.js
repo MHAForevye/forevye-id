@@ -7,15 +7,42 @@
   const C = window.FOREVYE_CONFIG;
   const USERNAME_RE = /^#[A-Z0-9]{8,29}$/;
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const APPS = [
-    { id: "sanal-banka", name: "Sanal Banka", scopes: ["kimlik", "bakiye"] },
-    { id: "nexus-pass", name: "Nexus Pass", scopes: ["kimlik", "bakiye"] },
-    { id: "mikro-klima", name: "Mikro-Klima", scopes: ["kimlik"] },
-    { id: "print", name: "FOREVYE PRINT", scopes: ["kimlik", "siparis"] },
-    { id: "retro-camera", name: "RETRO CAMERA", scopes: ["kimlik", "fotograf"] },
-    { id: "mantar-pano", name: "Mantar Pano", scopes: ["kimlik"] }
+  /* Üretimde uygulama listesi ön yüzde TUTULMAZ: katalog sunucudaki Application Registry'den gelir
+   * (GET /v1/catalog/apps, kullanıcı görünümü GET /v1/me/apps). Aşağıdaki DEMO_CATALOG yalnızca MOCK:true içindir. */
+  const DEMO_CATALOG = [
+    { id: "sanal-banka", name: "Sanal Banka", description: "Sanal hesap, bakiye ve işlem geçmişi.", category: "finans", scopes: ["openid", "profile:read", "balance:read"] },
+    { id: "nexus-pass", name: "Nexus Pass", description: "Dijital geçiş ve üyelik kartları.", category: "finans", scopes: ["openid", "profile:read", "balance:read"] },
+    { id: "mikro-klima", name: "Mikro-Klima", description: "Ortam sıcaklığı ve nem kontrol merkezi.", category: "iot", scopes: ["openid", "profile:read"] },
+    { id: "print", name: "FOREVYE PRINT", description: "Baskı siparişleri ve takibi.", category: "uretkenlik", scopes: ["openid", "profile:read", "orders:read"] },
+    { id: "retro-camera", name: "RETRO CAMERA", description: "Retro filtreli kamera uygulaması.", category: "medya", scopes: ["openid", "profile:read", "profile_photo:read"] },
+    { id: "mantar-pano", name: "Mantar Pano", description: "Notlar ve hatırlatıcılar için dijital pano.", category: "uretkenlik", scopes: ["openid", "profile:read"] }
   ];
-  const SCOPE_LABEL = { kimlik: "Kimlik (User ID)", bakiye: "Bakiye ve işlemler", siparis: "Siparişler", fotograf: "Profil fotoğrafı" };
+  /* Protokol scope'ları makine odaklıdır; metinler yalnızca kullanıcıya gösterilen varsayılan etiketlerdir.
+   * Sunucu scope'u kendi etiketiyle döndürürse o kullanılır. Eski Türkçe isimler geriye dönük uyumluluk içindir. */
+  const SCOPE_LABEL = {
+    "openid": "Kimlik (User ID)", "profile:read": "Profil adı ve kullanıcı adı", "email:read": "E-posta adresi",
+    "balance:read": "Bakiye", "transactions:read": "İşlem geçmişi", "orders:read": "Siparişleri görme", "orders:write": "Sipariş oluşturma",
+    "profile_photo:read": "Profil fotoğrafı",
+    kimlik: "Kimlik (User ID)", bakiye: "Bakiye ve işlemler", siparis: "Siparişler", fotograf: "Profil fotoğrafı"
+  };
+  const scopeId = (s) => (typeof s === "string" ? s : s && s.id) || "";
+  const scopeText = (s) => (s && typeof s === "object" && (s.label || s.description)) || SCOPE_LABEL[scopeId(s)] || scopeId(s);
+  /* Sunucu/mock farklı şekil dönebilir; arayüz tek biçim görür. */
+  function normApp(a) {
+    return {
+      id: a.id || a.appId || a.app_id, name: a.name || a.id || "Uygulama", description: a.description || a.shortDescription || a.short_description || "",
+      category: a.category || "diger", iconUrl: a.iconUrl || a.icon_url || null, coverUrl: a.coverImageUrl || a.cover_image_url || null,
+      appUrl: a.appUrl || a.app_url || null, status: a.status || "published", scopes: (a.scopes || a.allowedScopes || []).slice(),
+      connected: !!a.connected, needsConsent: !!(a.needsConsent || a.needs_consent), displayName: a.displayName || ""
+    };
+  }
+  function filterCatalog(list, { q, category, page, pageSize }) {
+    q = (q || "").trim().toLocaleLowerCase("tr");
+    let r = list.filter((a) => (!category || a.category === category) && (!q || (a.name + " " + a.description + " " + a.id).toLocaleLowerCase("tr").includes(q)));
+    const categories = [...new Set(list.map((a) => a.category))].sort();
+    const size = pageSize || 12, p = Math.max(1, page || 1), total = r.length;
+    return { items: r.slice((p - 1) * size, p * size), total, page: p, pageSize: size, categories };
+  }
 
   class ApiError extends Error { constructor(msg, code) { super(msg); this.code = code || "ERROR"; } }
 
@@ -76,7 +103,7 @@
   const now = () => Date.now();
   const H = 3600e3, D = 24 * H;
   function loadDb() { try { return JSON.parse(localStorage.getItem(DB_KEY)) || fresh(); } catch (e) { return fresh(); } }
-  function fresh() { return { users: {}, sessions: {}, mail: [], events: [], attempts: {} }; }
+  function fresh() { return { users: {}, sessions: {}, mail: [], events: [], attempts: {}, catalog: DEMO_CATALOG.map((a) => Object.assign({ status: "published" }, a)) }; }
   function save(db) { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
   function deviceInfo() {
     const ua = navigator.userAgent;
@@ -150,7 +177,7 @@
       if (byEmail(db, email)) throw new ApiError("Bu e-posta ile zaten bir hesap var.", "EMAIL_TAKEN");
       const salt = rndHex(16), id = "usr_" + rndHex(8);
       const u = db.users[id] = { id, email, salt, hash: await hashPw(password, salt), verified: false, createdAt: now(), pwUpdatedAt: now(), apps: {} };
-      APPS.forEach((a) => (u.apps[a.id] = { connected: true, displayName: "" }));
+      /* Yeni kayıt hiçbir uygulamaya otomatik izin vermez; izinler uygulamaya ilk girişte/“Bağla” ile verilir. */
       sendCode(db, u, "verify", "FOREVYE ID e-posta doğrulama");
       event(db, id, "register"); save(db);
       return { email, verificationRequired: true };
@@ -240,16 +267,31 @@
       return { ok: true, wasCurrent: id === s.id };
     },
     async events() { const db = loadDb(); const { u } = need(db); return db.events.filter((e) => e.userId === u.id).slice(0, 25); },
-    async apps() {
+    async catalog(params) {
+      const db = loadDb(); need(db);
+      const pub = (db.catalog || []).filter((a) => a.status === "published").map((a) => normApp(Object.assign({}, a)));
+      return filterCatalog(pub, params || {});
+    },
+    async apps(params) {
       const db = loadDb(); const { u } = need(db);
-      return APPS.map((a) => { const x = u.apps[a.id] || { connected: false, displayName: "" }; return { id: a.id, name: a.name, scopes: a.scopes, connected: x.connected, displayName: x.displayName }; });
+      const all = (db.catalog || []).filter((a) => a.status === "published" || (u.apps[a.id] && u.apps[a.id].connected)).map((a) => {
+        const x = u.apps[a.id] || { connected: false, displayName: "" };
+        return normApp(Object.assign({}, a, { connected: x.connected, displayName: x.displayName }));
+      });
+      return filterCatalog(all, params || {});
+    },
+    /* Yalnızca demo: katalogu büyüterek ön yüzün sabit uygulama sayısına bağlı olmadığını denemek için. */
+    demoGrowCatalog(n) {
+      const db = loadDb(); const cats = ["finans", "iot", "uretkenlik", "medya", "oyun"]; const have = db.catalog.length;
+      for (let i = have; i < n; i++) db.catalog.push({ id: "demo-app-" + (i + 1), name: "Demo Uygulama " + (i + 1), description: "Registry'ye sonradan eklenmiş örnek uygulama.", category: cats[i % cats.length], scopes: ["openid", "profile:read"], status: "published" });
+      save(db);
     },
     async setAppName(id, displayName) {
       const db = loadDb(); const { u } = need(db); if (!u.apps[id]) throw new ApiError("Uygulama bulunamadı.", "NOT_FOUND");
       displayName = (displayName || "").trim(); if (displayName.length > 32) throw new ApiError("Görünen ad en fazla 32 karakter olabilir.", "VALIDATION");
       u.apps[id].displayName = displayName; save(db); return { ok: true };
     },
-    async connectApp(id) { const db = loadDb(); const { u } = need(db); u.apps[id] = u.apps[id] || {}; u.apps[id].connected = true; save(db); return { ok: true }; },
+    async connectApp(id) { const db = loadDb(); const { u } = need(db); if (!(db.catalog || []).some((a) => a.id === id && a.status === "published")) throw new ApiError("Uygulama bulunamadı veya yayında değil.", "NOT_FOUND"); u.apps[id] = u.apps[id] || {}; u.apps[id].connected = true; save(db); return { ok: true }; },
     async disconnectApp(id) { const db = loadDb(); const { u } = need(db); if (u.apps[id]) u.apps[id].connected = false; event(db, u.id, "app_disconnected", id); save(db); return { ok: true }; },
     async twoFaStart({ method, password }) {
       const db = loadDb(); const { u } = need(db);
@@ -279,7 +321,6 @@
       if (!u) {
         const id = "usr_" + rndHex(8);
         u = db.users[id] = { id, email: gmail, salt: rndHex(16), hash: rndHex(32), verified: true, createdAt: now(), pwUpdatedAt: now(), google: { sub: "g_demo", email: gmail }, apps: {} };
-        APPS.forEach((a) => (u.apps[a.id] = { connected: true, displayName: "" }));
       }
       newSession(db, u, "Google"); save(db); return { user: publicUser(u) };
     },
@@ -325,6 +366,12 @@
     if (!res.ok) throw new ApiError((data && (data.message || data.err || (typeof data.error === "string" ? data.error : ""))) || "İstek başarısız (" + res.status + ")", (data && data.code) || "HTTP_" + res.status);
     return data;
   }
+  /* Sunucu dizi de döndürebilir ({items,total,...} da); ikincisi sunucu taraflı sayfalama demektir. */
+  function normList(r, params) {
+    if (Array.isArray(r)) return filterCatalog(r.map(normApp), params || {});
+    const items = (r.items || r.apps || []).map(normApp);
+    return { items, total: r.total != null ? r.total : items.length, page: r.page || 1, pageSize: r.pageSize || items.length || 12, categories: r.categories || [...new Set(items.map((a) => a.category))].sort() };
+  }
   const real = {
     register: (b) => http("/identity/register", { method: "POST", body: b, auth: false }),
     verifyEmail: (b) => http("/identity/email/verify", { method: "POST", body: b, auth: false }),
@@ -341,7 +388,17 @@
     sessions: () => http("/identity/sessions"),
     revokeSession: (id) => http("/identity/sessions/" + encodeURIComponent(id), { method: "DELETE" }),
     events: () => http("/identity/security-events"),
-    apps: () => http("/identity/apps"),
+    /* Registry katalogu: yeni uç yoksa (404) eski /identity/apps adaptörüne düşer. */
+    async catalog(params) {
+      const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== "" && v != null)).toString();
+      try { const r = await http("/v1/catalog/apps" + (qs ? "?" + qs : "")); return normList(r, params); }
+      catch (e) { if (e.code !== "HTTP_404") throw e; return normList(await http("/identity/apps"), params); }
+    },
+    async apps(params) {
+      const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== "" && v != null)).toString();
+      try { const r = await http("/v1/me/apps" + (qs ? "?" + qs : "")); return normList(r, params); }
+      catch (e) { if (e.code !== "HTTP_404") throw e; return normList(await http("/identity/apps"), params); }
+    },
     setAppName: (id, displayName) => http("/identity/apps/" + encodeURIComponent(id), { method: "PATCH", body: { displayName } }),
     connectApp: (id) => http("/identity/apps/" + encodeURIComponent(id), { method: "POST" }),
     disconnectApp: (id) => http("/identity/apps/" + encodeURIComponent(id), { method: "DELETE" }),
@@ -373,5 +430,5 @@
     hasSession: () => !!tokens().accessToken
   };
 
-  window.FID = { api: C.MOCK ? mock : real, ApiError, APPS, SCOPE_LABEL, validateUsername, validatePassword, sniffImage, totp, EMAIL_RE, config: C };
+  window.FID = { api: C.MOCK ? mock : real, ApiError, SCOPE_LABEL, scopeId, scopeText, validateUsername, validatePassword, sniffImage, totp, EMAIL_RE, config: C };
 })();

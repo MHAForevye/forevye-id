@@ -1,6 +1,6 @@
 /* FOREVYE ID — arayüz */
 (function () {
-  const { api, APPS, SCOPE_LABEL, validateUsername, validatePassword, sniffImage, EMAIL_RE, config: C } = window.FID;
+  const { api, scopeText, validateUsername, validatePassword, sniffImage, EMAIL_RE, config: C } = window.FID;
   const $ = (s, r) => (r || document).querySelector(s);
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fmt = (t) => (t ? new Date(t).toLocaleString("tr-TR") : "—");
@@ -233,17 +233,40 @@
     document.querySelectorAll("[data-rv]").forEach((b) => (b.onclick = async () => { const r = await api.revokeSession(b.dataset.rv); if (r.wasCurrent) { user = null; go("/giris"); } else { toast("Oturum kapatıldı."); vSecurity(); } }));
   }
 
-  /* ---------------- Uygulamalar ---------------- */
+  /* ---------------- Uygulamalar (Registry kataloğundan dinamik) ---------------- */
+  const appsQ = { q: "", category: "", page: 1, pageSize: 12 };
+  const initial = (n) => esc(String(n || "?").trim().charAt(0).toUpperCase());
+  const statusBadge = (a) => a.status === "suspended" ? '<span class="badge warn">askıda</span>'
+    : a.connected ? (a.needsConsent ? '<span class="badge warn">yeni izin gerekiyor</span>' : '<span class="badge ok">bağlı</span>') : '<span class="badge">bağlı değil</span>';
+  function appCard(a) {
+    const icon = a.iconUrl ? `<img alt="" src="${esc(a.iconUrl)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${initial(a.name)}'}))">` : initial(a.name);
+    const open = a.connected && a.appUrl && a.status !== "suspended" && /^https:\/\//.test(a.appUrl) ? `<a class="btn sm pri" href="${esc(a.appUrl)}" rel="noopener">Aç</a>` : "";
+    const connect = !a.connected && a.status !== "suspended" ? (C.MOCK ? `<button class="btn sm" data-cn="${esc(a.id)}">Bağla (demo)</button>` : a.appUrl && /^https:\/\//.test(a.appUrl) ? `<a class="btn sm" href="${esc(a.appUrl)}" rel="noopener">İzinleri gör</a>` : "") : "";
+    return `<article class="app-card"><div class="app-head"><div class="app-icon">${icon}</div><div class="app-title"><h2>${esc(a.name)}</h2>${statusBadge(a)}</div></div>
+      <p class="mut app-desc">${esc(a.description || "Açıklama eklenmemiş.")}</p>
+      <details class="app-scopes"><summary>İzinler (${a.scopes.length})</summary><ul>${a.scopes.map((s) => `<li>${esc(scopeText(s))}</li>`).join("")}</ul></details>
+      ${a.connected ? `<form data-nf="${esc(a.id)}" class="row"><input type="text" name="n" maxlength="32" aria-label="${esc(a.name)} için görünen ad" placeholder="Bu uygulamaya özel görünen ad" value="${esc(a.displayName)}" style="flex:1;min-width:160px"><button class="btn sm">Kaydet</button></form>` : ""}
+      <div class="row sp app-actions">${open || connect || "<span></span>"}${a.connected ? `<button class="btn dng sm" data-dc="${esc(a.id)}">Bağlantıyı kaldır</button>` : ""}</div></article>`;
+  }
   async function vApps() {
-    user = await api.me(); const list = await api.apps();
-    layout("/uygulamalar", `<h1>Bağlı uygulamalar</h1>
+    user = await api.me();
+    const r = await api.apps(appsQ);
+    const pages = Math.max(1, Math.ceil(r.total / r.pageSize));
+    if (appsQ.page > pages) { appsQ.page = pages; return vApps(); }
+    layout("/uygulamalar", `<h1>Uygulamalarım</h1>
       <p class="mut">Her uygulama yalnızca kendi izin kapsamını alır ve diğer uygulamaların oturum/verilerine erişemez. Bir bağlantıyı kaldırmak diğerlerini ve merkezi hesabı etkilemez.</p>
-      ${list.map((a) => `<div class="card wide"><div class="row sp"><h2 style="margin:0">${esc(a.name)} ${a.connected ? '<span class="badge ok">bağlı</span>' : '<span class="badge">bağlı değil</span>'}</h2>
-        ${a.connected ? `<button class="btn dng sm" data-dc="${a.id}">Bağlantıyı kaldır</button>` : C.MOCK ? `<button class="btn sm" data-cn="${a.id}">Bağla (demo)</button>` : ""}</div>
-        <div class="row" style="margin:.5rem 0">${a.scopes.map((s) => `<span class="badge">${esc(SCOPE_LABEL[s] || s)}</span>`).join("")}</div>
-        ${a.connected ? `<form data-nf="${a.id}" class="row"><input type="text" name="n" maxlength="32" placeholder="Bu uygulamaya özel görünen ad" value="${esc(a.displayName)}" style="flex:1;min-width:180px"><button class="btn sm pri">Kaydet</button></form><div class="hint">Merkezi User ID'yi ve diğer uygulamalardaki adları etkilemez.</div>` : ""}</div>`).join("")}`);
-    document.querySelectorAll("[data-dc]").forEach((b) => (b.onclick = async () => { if (!confirm("Bu uygulamanın hesabınıza erişimi kaldırılsın mı?")) return; await api.disconnectApp(b.dataset.dc); vApps(); }));
-    document.querySelectorAll("[data-cn]").forEach((b) => (b.onclick = async () => { await api.connectApp(b.dataset.cn); vApps(); }));
+      <div class="toolbar"><input type="search" id="aq" aria-label="Uygulama ara" placeholder="Uygulama ara…" value="${esc(appsQ.q)}">
+        <select id="ac" aria-label="Kategori"><option value="">Tüm kategoriler</option>${r.categories.map((c) => `<option value="${esc(c)}"${c === appsQ.category ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+      <div class="hint" role="status">${r.total} uygulama</div>
+      <div class="app-grid">${r.items.length ? r.items.map(appCard).join("") : '<div class="card wide mut">Eşleşen uygulama yok.</div>'}</div>
+      ${pages > 1 ? `<div class="row pager"><button class="btn sm" id="pp"${appsQ.page <= 1 ? " disabled" : ""}>‹ Önceki</button><span class="mut sm">Sayfa ${appsQ.page} / ${pages}</span><button class="btn sm" id="pn"${appsQ.page >= pages ? " disabled" : ""}>Sonraki ›</button></div>` : ""}`);
+    let t; const aq = $("#aq");
+    aq.oninput = () => { clearTimeout(t); t = setTimeout(() => { appsQ.q = aq.value; appsQ.page = 1; vApps().then(() => { const n = $("#aq"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }); }, 300); };
+    $("#ac").onchange = (e) => { appsQ.category = e.target.value; appsQ.page = 1; vApps(); };
+    if ($("#pp")) $("#pp").onclick = () => { appsQ.page--; vApps(); };
+    if ($("#pn")) $("#pn").onclick = () => { appsQ.page++; vApps(); };
+    document.querySelectorAll("[data-dc]").forEach((b) => (b.onclick = async () => { if (!confirm("Bu uygulamanın hesabınıza erişimi kaldırılsın mı?")) return; try { await api.disconnectApp(b.dataset.dc); } catch (x) { toast(x.message); } vApps(); }));
+    document.querySelectorAll("[data-cn]").forEach((b) => (b.onclick = async () => { try { await api.connectApp(b.dataset.cn); } catch (x) { toast(x.message); } vApps(); }));
     document.querySelectorAll("[data-nf]").forEach((f) => f.addEventListener("submit", async (e) => { e.preventDefault(); try { await api.setAppName(f.dataset.nf, new FormData(f).get("n")); toast("Görünen ad kaydedildi."); } catch (x) { toast(x.message); } }));
   }
 
@@ -257,7 +280,7 @@
     try { info = await api.authorizeInfo({ app: b.app, redirect: b.redirect }); }
     catch (e) { if (e.code === "UNAUTHORIZED") sessionStorage.setItem("fid.pending", location.hash); throw e; }
     app(authShell(`<h1>${esc(info.app.name)} erişim istiyor</h1><p class="mut"><b>${esc(info.email)}</b> hesabınla giriş yapılacak. Parolan uygulamaya verilmez.</p>
-      <div class="row" style="margin:.6rem 0">${info.app.scopes.map((s) => `<span class="badge">${esc(SCOPE_LABEL[s] || s)}</span>`).join("")}</div>
+      <div class="row" style="margin:.6rem 0">${info.app.scopes.map((s) => `<span class="badge">${esc(scopeText(s))}</span>`).join("")}</div>
       <div class="err"></div><button class="btn pri block" id="ok">İzin ver ve devam et</button><button class="btn block" id="no" style="margin-top:.6rem">Vazgeç</button>
       <p class="hint">Bu izni “Bağlı uygulamalar” sayfasından istediğin zaman kaldırabilirsin.</p>`));
     $("#ok").onclick = async () => { $("#ok").disabled = true; try { const r = await api.authorize(b); location.href = r.redirect; } catch (e) { $(".err").textContent = e.message; $("#ok").disabled = false; } };
@@ -296,9 +319,10 @@
       if (box) { box.remove(); box = null; return; }
       box = document.createElement("div"); box.className = "mailbox";
       const mails = api.demoMailbox();
-      box.innerHTML = `<div class="row sp"><b>Demo posta kutusu</b><button class="btn sm" id="rst">Demoyu sıfırla</button></div><p class="hint">Gerçek sunucuda bu e-postalar e-posta sağlayıcısıyla gönderilir.</p>` +
+      box.innerHTML = `<div class="row sp"><b>Demo posta kutusu</b><button class="btn sm" id="rst">Demoyu sıfırla</button></div><div class="row" style="margin:.4rem 0"><button class="btn sm" id="grow">Katalogu 60 uygulamaya çıkar</button></div><p class="hint">Gerçek sunucuda bu e-postalar e-posta sağlayıcısıyla gönderilir.</p>` +
         (mails.length ? mails.map((m) => `<div class="m"><div class="sm mut">${fmt(m.at)} · ${esc(m.to)}</div><b>${esc(m.subject)}</b><div>${esc(m.body)}</div></div>`).join("") : '<div class="mut">Henüz e-posta yok.</div>');
       document.body.appendChild(box);
+      $("#grow").onclick = () => { api.demoGrowCatalog(60); toast("Katalog 60 uygulamaya çıkarıldı."); if (location.hash === "#/uygulamalar") route(); };
       $("#rst").onclick = () => { if (confirm("Tüm demo verileri silinsin mi?")) { api.demoReset(); location.hash = "#/giris"; location.reload(); } };
     };
     lastMail = api.demoMailbox().length; mailCheck();
