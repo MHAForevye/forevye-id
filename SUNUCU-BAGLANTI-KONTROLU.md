@@ -40,8 +40,16 @@ Nexus Banka Worker'ında `ID_URL` FOREVYE ID web arayüzünü, `ID_API_URL` ise 
 ## 5. Hızlı uç kontrolü
 
 - `GET {API_BASE}/` cevap veriyorsa Worker adresi erişilebilirdir; kök rotanın `404` dönmesi tek başına sorun değildir.
-- `GET {API_BASE}/identity/profile` token olmadan `401` veya tanımlı bir JSON yetki hatası döndürüyorsa API rotası çalışıyor olabilir.
+- `GET {API_BASE}/identity/profile` token olmadan `401` veya `403` döndürüyorsa API rotası ve CORS erişilebilir durumdadır; bu, sağlık kontrolünde beklenen bir yanıttır.
 - `404` üzerinde HTML/Cloudflare hata sayfası, yanlış Worker adresi veya eksik route ihtimalini artırır.
 - Tarayıcı konsolunda `blocked by CORS policy` görünüyorsa Worker'ın origin/OPTIONS başlıkları düzeltilmelidir.
 
 **Güvenlik:** Parolaları, API anahtarlarını, refresh token'ları veya kullanıcı verilerini tanılama çıktısına eklemeyin. Bunları ekran görüntüsü ya da herkese açık destek kaydında paylaşmayın.
+
+
+## 2026-11-23 bağlantı yaması
+
+- İstemcinin sağlık kontrolü artık `/` yerine `/identity/profile` yolunu sınar; kök sayfanın CORS/404 davranışı yanlış çevrimdışı uyarısına neden olmaz.
+- Market `wrangler.toml` içindeki `ID_ORIGIN` değeri `https://mhaforevye.github.io` ile eşleşiyor. Ancak bu değişkenin bulunması Worker kodunun CORS başlıklarını otomatik eklediği anlamına gelmez.
+- `/identity/*` için `OPTIONS` ve gerçek yanıt başlıklarını uygulayan middleware: `worker/identity-cors.mjs`. Mevcut Worker dispatcher'ına nasıl bağlanacağı: `MIKRO-KLIMA-WORKER-CORS-ENTEGRASYONU.md`.
+- Mevcut Mikro-Klima Worker kaynak kodu / `worker/index.js` paylaşılmadığından bu middleware burada canlı Worker'a entegre edilip deploy edilmedi.

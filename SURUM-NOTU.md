@@ -35,3 +35,9 @@ Bu sürüm yalnızca **ön yüzü** kapsar. Identity Worker ve D1 şeması paket
 - `README.md`: Cloudflare CORS/Worker/route kontrol listesi ve hata kodu açıklamaları eklendi.
 - **Backend notu:** Bu kaynak arşivinde Identity Worker ve D1 şeması bulunmadığından sunucu tarafı rota/CORS/DNS değişikliği veya deploy yapılmadı.
 - `SUNUCU-BAGLANTI-KONTROLU.md` (yeni): Cloudflare Worker, CORS, D1, ID_ORIGIN ve Nexus ID_URL/ID_API_URL için yayın kontrol listesi.
+
+
+## 2026-11-23 — bağlantı ve CORS teşhisi
+- Sağlık denetimi kök URL yerine `GET /identity/profile` kullanacak şekilde düzeltildi. `401/403` geçerli bir API yanıtı olarak çevrimiçi kabul edilir.
+- `/identity/*` Worker uçları için allowlist tabanlı CORS middleware ve testleri eklendi.
+- Worker modülünün entegrasyon adımları belgelendi. Gerçek Mikro-Klima Worker kaynak kodu teslim edilen arşivde bulunmadığı için canlı dağıtım yapılmadı.

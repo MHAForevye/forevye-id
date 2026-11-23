@@ -444,15 +444,32 @@
   async function checkServer() {
     const started = Date.now();
     let endpoint = String(C.API_BASE || "");
+    const probePath = "/identity/profile";
     try {
       endpoint = apiBase();
-      // Kök yolun 404 dönmesi bile Worker'ın cevap verdiğini gösterir; health rotası varsayılmaz.
-      const res = await timedFetch(endpoint + "/", { method: "GET", headers: { Accept: "application/json,text/plain,*/*" } }, C.HEALTH_TIMEOUT_MS || 8000);
-      const result = { reachable: true, healthy: res.status < 500, status: res.status, latencyMs: Date.now() - started, endpoint };
-      emitApiStatus({ state: result.healthy ? "online" : "degraded", status: res.status, latencyMs: result.latencyMs });
+      // Kök sayfa yerine gerçek kimlik API'sini yokla. Oturumsuz 401/403,
+      // API rotasının ve CORS'un yanıt verdiğini gösterir; giriş hatası değildir.
+      const res = await timedFetch(endpoint + probePath, {
+        method: "GET",
+        headers: { Accept: "application/json" }
+      }, C.HEALTH_TIMEOUT_MS || 8000);
+      const data = await readResponse(res);
+      const routeMissing = res.status === 404 || res.status === 405;
+      const healthy = res.status < 500 && !routeMissing;
+      let message = "";
+      if (res.status === 401 || res.status === 403) message = "Kimlik API'si yanıt veriyor; profil için oturum gerekiyor (bu kontrol için normal).";
+      else if (res.status === 404) message = probePath + " rotası bulunamadı. Yanlış Worker dağıtımı veya eksik Identity rotaları.";
+      else if (res.status === 405) message = probePath + " GET isteğini kabul etmedi. Worker rotasını kontrol edin.";
+      else if (res.status >= 500) message = (data && data.message) || "Kimlik Worker'ı sunucu hatası döndürdü (HTTP " + res.status + ").";
+      const result = {
+        reachable: true, healthy, status: res.status, message,
+        authRequired: res.status === 401 || res.status === 403,
+        latencyMs: Date.now() - started, endpoint, probePath
+      };
+      emitApiStatus({ state: healthy ? "online" : "degraded", status: res.status, message, latencyMs: result.latencyMs });
       return result;
     } catch (e) {
-      const result = { reachable: false, healthy: false, code: e.code || "NETWORK", message: e.message, latencyMs: Date.now() - started, endpoint, origin: (window.location && window.location.origin) || "" };
+      const result = { reachable: false, healthy: false, code: e.code || "NETWORK", message: e.message, latencyMs: Date.now() - started, endpoint, probePath, origin: (window.location && window.location.origin) || "" };
       emitApiStatus({ state: "offline", message: result.message, code: result.code });
       return result;
     }

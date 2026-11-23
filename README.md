@@ -59,3 +59,7 @@ Login yanıtı: `{accessToken, refreshToken}` veya 2FA için `{twoFactorRequired
 - Hesap silmede Google "kaldırma" seçeneği: yerel kayıt hesapla silinir, Google'daki izin kalır (kullanıcıya açıkça yazılır).
 - E-posta erişim kaybı için alternatif kurtarma yoktur (şartnamede de açık karar).
 - Yasal metinler yer tutucudur.
+
+
+### 2026-11-23 sunucu bağlantı yaması
+Sağlık kontrolü artık gerçek `GET /identity/profile` rotasını kullanır. Oturum açılmadığında alınan `401/403`, CORS başlıklarıyla geldiyse bağlantının çalıştığı anlamına gelir. Mikro-Klima Worker'ındaki `OPTIONS` ve CORS yanıtları için `worker/identity-cors.mjs` modülünü mevcut Worker dispatcher'ına bağlayın; adımlar `MIKRO-KLIMA-WORKER-CORS-ENTEGRASYONU.md` dosyasındadır. Bu modülün entegre edilmesi ve deploy için Worker'ın gerçek kaynak kodu gerekir.

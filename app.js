@@ -18,7 +18,13 @@
     const s = serverState;
     const cls = s.state === "online" ? "online" : s.state === "degraded" ? "degraded" : s.state === "offline" ? "offline" : "checking";
     const label = cls === "online" ? "Kimlik sunucusu erişilebilir" : cls === "degraded" ? "Sunucu yanıt veriyor ancak hata döndürüyor" : cls === "offline" ? "Kimlik sunucusuna bağlantı yok" : "Kimlik sunucusu kontrol ediliyor";
-    const extra = s.state === "offline" ? `<small>${esc(s.message || "Worker, DNS veya CORS bağlantısını kontrol edin.")}</small>` : s.state === "degraded" ? `<small>HTTP ${esc(s.status || "5xx")} · Worker günlüklerini kontrol edin.</small>` : s.state === "online" ? `<small>HTTP ${esc(s.status)} · ${esc(s.latencyMs)} ms</small>` : `<small>${esc(C.API_BASE)}</small>`;
+    const extra = s.state === "offline"
+      ? `<small>${esc(s.message || "Worker adresi, DNS ve CORS ayarlarını kontrol edin.")}</small>`
+      : s.state === "degraded"
+        ? `<small>HTTP ${esc(s.status || "5xx")} · ${esc(s.message || "Identity API rotası yanıt vermedi.")}</small>`
+        : s.state === "online"
+          ? `<small>GET /identity/profile · HTTP ${esc(s.status)}${s.status === 401 || s.status === 403 ? " · API açık, oturum gerekiyor" : ""} · ${esc(s.latencyMs)} ms</small>`
+          : `<small>${esc(C.API_BASE)} · /identity/profile</small>`;
     host.hidden = false;
     host.innerHTML = `<div class="connection-pill ${cls}"><span class="connection-dot"></span><span class="connection-copy"><b>${label}</b>${extra}</span><button type="button" class="btn sm" data-server-check>Bağlantıyı sına</button></div>`;
   }
@@ -28,7 +34,7 @@
     const result = await api.health();
     if (result.mode === "mock") return;
     if (!result.reachable) renderServerStatus({ state: "offline", message: result.message });
-    else if (!result.healthy) renderServerStatus({ state: "degraded", status: result.status });
+    else if (!result.healthy) renderServerStatus({ state: "degraded", status: result.status, message: result.message });
     else renderServerStatus({ state: "online", status: result.status, latencyMs: result.latencyMs });
   }
   document.addEventListener("click", (event) => {
@@ -38,7 +44,7 @@
   window.addEventListener("fid:api-status", (event) => {
     const d = event.detail || {};
     if (d.state === "offline") renderServerStatus({ state: "offline", message: d.message });
-    else if (d.state === "degraded") renderServerStatus({ state: "degraded", status: d.status });
+    else if (d.state === "degraded") renderServerStatus({ state: "degraded", status: d.status, message: d.message });
     else if (d.state === "online") renderServerStatus({ state: "online", status: d.status, latencyMs: d.latencyMs || "—" });
   });
 
