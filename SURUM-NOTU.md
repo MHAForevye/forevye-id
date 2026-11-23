@@ -5,7 +5,7 @@ Bu sürüm yalnızca **ön yüzü** kapsar. Identity Worker ve D1 şeması paket
 ## Değişen dosyalar
 | Dosya | Değişiklik |
 |---|---|
-| `api.js` | Sabit `APPS` dizisi kaldırıldı. `catalog()` → `GET /v1/catalog/apps`, `apps()` → `GET /v1/me/apps`; uç yoksa (404) eski `/identity/apps` adaptörüne düşer. Yanıt şekli tek biçime normalleştirilir (dizi veya `{items,total,...}`). Scope'lar `openid`, `profile:read` gibi makine adlarıyla; eski `kimlik/bakiye/...` adları geriye uyumlu. Mock: katalog artık DB içinde, **kayıtta otomatik uygulama izni verilmez**, olmayan uygulamaya bağlanma reddedilir. |
+| `api.js` | Gerçek Mikro-Klima Worker sözleşmesine geçirildi: `catalog()` ve `apps()` doğrudan `GET /identity/apps` çağırır. Worker'da olmayan `/v1/catalog/apps` ve `/v1/me/apps` çağrıları kaldırıldı; bu isteklerin CORS preflight'ı 404/405 ile kesildiği için tarayıcı bunları `NETWORK` olarak gösteriyordu. Arama, kategori ve sayfalama mevcut sunucunun dizi yanıtı üzerinde istemcide uygulanır. |
 | `app.js` | "Uygulamalarım" ekranı API'den dinamik kart ızgarası: arama, kategori filtresi, sayfalama, durum rozetleri (Bağlı / Bağlı değil / Askıda / Yeni izin gerekiyor), "Aç", izin listesi. Demo kutusuna "Katalogu 60 uygulamaya çıkar" düğmesi. |
 | `style.css` | Füme + amber masa lambası teması (mor/mavi gradient yok), responsive uygulama ızgarası, lamba stilleri, `prefers-reduced-motion`. |
 | `index.html` | `lamp.js` eklendi, tema rengi güncellendi. |
@@ -48,3 +48,10 @@ Bu sürüm yalnızca **ön yüzü** kapsar. Identity Worker ve D1 şeması paket
 - `api.js`: yeni Registry uçları `404/405` döndürdüğünde eski `/identity/apps` adaptörüne geçilir; arama, kategori ve sayfalama parametreleri eski uca da aktarılır. Ağ, oturum ve 5xx hatalarında sessiz fallback yapılmaz. İki Registry rotası da yoksa iki denemenin ayrıntısı korunur. HTTP/ağ hataları hangi URL'de oluştuğunu taşır.
 - `style.css`: uygulama listesinin yükleniyor ve hata durumları için ayrı görünüm eklendi.
 - **Backend gereksinimi devam ediyor:** Identity Worker'da `GET /v1/me/apps` veya `GET /identity/apps` ve profil/oturum rotaları gerçekten bulunmalı. Bu ön yüz paketi sunucu rotası yaratmaz ve Cloudflare'a deploy yapmaz.
+
+
+## 2026-11-23 Uygulamalar sayfası API düzeltmesi
+
+- Mikro-Klima `worker/identity.js` içindeki gerçek kullanıcı uygulama listesi rotası `GET /identity/apps` olarak doğrulandı. `/v1/me/apps` ve `/v1/catalog/apps` bu Worker tarafından sunulmuyor.
+- ID istemcisi önce bu mevcut olmayan `/v1/*` uçlarına gidip `Authorization` başlığı nedeniyle CORS preflight oluşturuyordu. Worker bu yolların `OPTIONS` preflight'ını desteklemediğinden tarayıcı HTTP 404/405'i JS'e göstermeden `TypeError: Failed to fetch` üretiyordu; 404/405 fallback kodu bu nedenle hiç çalışmıyordu.
+- `catalog()` ve `apps()` doğrudan `/identity/apps` kullanacak şekilde düzeltildi. Liste filtreleme ve sayfalama, Worker'ın gerçek dizi yanıtı üzerinde yerel olarak çalışıyor.

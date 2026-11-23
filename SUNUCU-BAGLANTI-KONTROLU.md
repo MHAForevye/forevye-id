@@ -53,3 +53,8 @@ Nexus Banka Worker'ında `ID_URL` FOREVYE ID web arayüzünü, `ID_API_URL` ise 
 - Market `wrangler.toml` içindeki `ID_ORIGIN` değeri `https://mhaforevye.github.io` ile eşleşiyor. Ancak bu değişkenin bulunması Worker kodunun CORS başlıklarını otomatik eklediği anlamına gelmez.
 - `/identity/*` için `OPTIONS` ve gerçek yanıt başlıklarını uygulayan middleware: `worker/identity-cors.mjs`. Mevcut Worker dispatcher'ına nasıl bağlanacağı: `MIKRO-KLIMA-WORKER-CORS-ENTEGRASYONU.md`.
 - Mevcut Mikro-Klima Worker kaynak kodu / `worker/index.js` paylaşılmadığından bu middleware burada canlı Worker'a entegre edilip deploy edilmedi.
+
+
+## Uygulamalarım endpoint uyumu
+
+Mikro-Klima'nın gerçek Identity Worker'ında uygulama listesi `GET /identity/apps` rotasındadır. ID ön yüzü `/v1/me/apps` veya `/v1/catalog/apps` çağırmamalıdır. Bu Worker `/v1/*` için CORS preflight rotası sunmadığından, `Authorization` başlıklı tarayıcı isteği `NETWORK` olarak engellenebilir ve istemci tarafındaki HTTP 404/405 fallback kodu çalışmaz. Güncel istemci doğrudan `/identity/apps` çağırır.

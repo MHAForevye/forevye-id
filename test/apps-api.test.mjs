@@ -16,7 +16,7 @@ function makeApi(fetchImpl) {
   const window = {
     FOREVYE_CONFIG: {
       MOCK: false,
-      API_BASE: 'https://id.example.test',
+      API_BASE: 'https://mikroklimakontrolmerkezi.forevye.workers.dev',
       API_TIMEOUT_MS: 2000,
       HEALTH_TIMEOUT_MS: 1000,
       PASSWORD_MIN_LENGTH: 10,
@@ -43,61 +43,59 @@ function response(status, data) {
   };
 }
 
-test('yeni apps rotası 404 ise eski rota kullanılır ve query korunur', async () => {
-  const calls = [];
-  const api = makeApi(async (url) => {
-    calls.push(url);
-    if (url.includes('/v1/me/apps')) return response(404, { code: 'not_found' });
-    return response(200, { items: [{ id: 'nexus', name: 'Nexus', scopes: [] }], total: 1, page: 1, pageSize: 12, categories: ['finans'] });
-  });
-  const result = await api.apps({ q: 'nexus', category: 'finans', page: 2, pageSize: 12 });
-  assert.equal(result.total, 1);
-  assert.equal(result.items[0].id, 'nexus');
-  assert.equal(calls.length, 2);
-  assert.match(calls[1], /\/identity\/apps\?/);
-  assert.match(calls[1], /q=nexus/);
-  assert.match(calls[1], /category=finans/);
-  assert.match(calls[1], /page=2/);
-});
+const workerApps = [
+  { id: 'sanal-banka', name: 'Sanal Banka', scopes: ['kimlik', 'bakiye'], connected: true, displayName: 'Ana kartım' },
+  { id: 'nexus-pass', name: 'Nexus Pass', scopes: ['kimlik', 'bakiye'], connected: false, displayName: '' },
+  { id: 'mikro-klima', name: 'Mikro-Klima', scopes: ['kimlik'], connected: true, displayName: '' },
+  { id: 'print', name: 'FOREVYE PRINT', scopes: ['kimlik', 'siparis'], connected: false, displayName: '' },
+  { id: 'retro-camera', name: 'RETRO CAMERA', scopes: ['kimlik', 'fotograf'], connected: false, displayName: '' },
+  { id: 'mantar-pano', name: 'Mantar Pano', scopes: ['kimlik'], connected: false, displayName: '' },
+];
 
-test('yeni apps rotası 405 ise eski rotaya düşer', async () => {
+test('uygulama listesi doğrudan Worker tarafından sunulan /identity/apps rotasını çağırır', async () => {
   const calls = [];
-  const api = makeApi(async (url) => {
-    calls.push(url);
-    return url.includes('/v1/me/apps') ? response(405, { message: 'method not allowed' }) : response(200, []);
+  const api = makeApi(async (url, init) => {
+    calls.push({ url, init });
+    return response(200, workerApps);
   });
   const result = await api.apps({ page: 1, pageSize: 12 });
-  assert.equal(result.total, 0);
-  assert.equal(calls.length, 2);
-});
-
-test('yeni rota 500 döndürürse fallback yapıp hatayı gizlemez', async () => {
-  const calls = [];
-  const api = makeApi(async (url) => {
-    calls.push(url);
-    return response(503, { code: 'unavailable', message: 'temporary outage' });
-  });
-  await assert.rejects(api.apps({}), (error) => error.status === 503 && error.endpoint.includes('/v1/me/apps'));
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://mikroklimakontrolmerkezi.forevye.workers.dev/identity/apps');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer test-access');
+  assert.equal(result.total, 6);
+  assert.equal(result.items[0].id, 'sanal-banka');
+  assert.equal(result.items[0].connected, true);
+  assert.equal(result.items[0].displayName, 'Ana kartım');
 });
 
-test('iki uygulama listesi rotası da yoksa iki adresi raporlar', async () => {
+test('arama, kategori ve sayfalama Worker sözleşmesiyle uyumlu biçimde istemcide uygulanır', async () => {
+  let calls = 0;
+  const api = makeApi(async () => { calls++; return response(200, workerApps); });
+  const result = await api.apps({ q: 'nexus', page: 1, pageSize: 12 });
+  assert.equal(calls, 1);
+  assert.equal(result.total, 1);
+  assert.equal(result.items[0].id, 'nexus-pass');
+});
+
+test('liste ekranında artık var olmayan /v1/me/apps veya /v1/catalog/apps çağrılmaz', async () => {
   const calls = [];
-  const api = makeApi(async (url) => {
-    calls.push(url);
-    return response(404, { code: 'not_found', message: 'not found' });
-  });
-  await assert.rejects(api.apps({}), (error) => {
-    assert.equal(error.code, 'APP_REGISTRY_UNAVAILABLE');
-    assert.equal(error.attempts.length, 2);
-    assert.match(error.attempts[0], /v1\/me\/apps/);
-    assert.match(error.attempts[1], /identity\/apps/);
-    return true;
-  });
+  const api = makeApi(async (url) => { calls.push(url); return response(200, workerApps); });
+  await api.apps({ q: 'banka' });
+  await api.catalog({ q: 'banka' });
   assert.equal(calls.length, 2);
+  assert.ok(calls.every((url) => url.endsWith('/identity/apps')));
+  assert.ok(calls.every((url) => !url.includes('/v1/')));
 });
 
-test('bağlantı hatasında endpoint bilgisi korunur', async () => {
+test('401 yanıtı oturumu sona ermiş olarak tanımlar, yanlış endpoint yedeğine geçmez', async () => {
+  const calls = [];
+  const api = makeApi(async (url) => { calls.push(url); return response(401, { code: 'UNAUTHORIZED', message: 'Oturum geçersiz.' }); });
+  await assert.rejects(api.apps({}), (error) => error.code === 'UNAUTHORIZED' && error.status === 401);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].endsWith('/identity/apps'));
+});
+
+test('ağ hatasında doğru Identity endpoint bilgisi korunur', async () => {
   const api = makeApi(async () => { throw new TypeError('Failed to fetch'); });
-  await assert.rejects(api.apps({}), (error) => error.code === 'NETWORK' && error.endpoint.includes('/v1/me/apps'));
+  await assert.rejects(api.apps({}), (error) => error.code === 'NETWORK' && error.endpoint.endsWith('/identity/apps'));
 });

@@ -7,8 +7,9 @@
   const C = window.FOREVYE_CONFIG;
   const USERNAME_RE = /^#[A-Z0-9]{8,29}$/;
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  /* Üretimde uygulama listesi ön yüzde TUTULMAZ: katalog sunucudaki Application Registry'den gelir
-   * (GET /v1/catalog/apps, kullanıcı görünümü GET /v1/me/apps). Aşağıdaki DEMO_CATALOG yalnızca MOCK:true içindir. */
+  /* Üretimde uygulama listesi Mikro-Klima Identity Worker'ından gelir:
+   * GET /identity/apps. Bu Worker /v1/catalog/apps veya /v1/me/apps rotalarını sunmaz.
+   * Aşağıdaki DEMO_CATALOG yalnızca MOCK:true içindir. */
   const DEMO_CATALOG = [
     { id: "sanal-banka", name: "Sanal Banka", description: "Sanal hesap, bakiye ve işlem geçmişi.", category: "finans", scopes: ["openid", "profile:read", "balance:read"] },
     { id: "nexus-pass", name: "Nexus Pass", description: "Dijital geçiş ve üyelik kartları.", category: "finans", scopes: ["openid", "profile:read", "balance:read"] },
@@ -518,49 +519,22 @@
     sessions: () => http("/identity/sessions"),
     revokeSession: (id) => http("/identity/sessions/" + encodeURIComponent(id), { method: "DELETE" }),
     events: () => http("/identity/security-events"),
-    /* Registry katalogu: yeni uç yoksa (404) eski /identity/apps adaptörüne düşer. */
+    /* Mikro-Klima Worker'ın gerçek uç noktası GET /identity/apps'tir.
+       /v1/me/apps için Authorization başlığıyla yapılan CORS preflight bu Worker'da
+       desteklenmiyor; tarayıcı 404/405'i JavaScript'e ulaştırmadan NETWORK hatası üretir.
+       Bu yüzden var olmayan /v1 uçlarına istek atma. Arama/kategori/sayfalama normList'te
+       istemci tarafında uygulanır; sunucu mevcut kullanıcıya ait gerçek kayıtları döndürür. */
     async catalog(params) {
-      const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== "" && v != null)).toString();
-      const query = qs ? "?" + qs : "";
-      try { const r = await http("/v1/catalog/apps" + query); return normList(r, params); }
-      catch (e) {
-        if (!e || ![404, 405].includes(e.status)) throw e;
-        try { return normList(await http("/identity/apps" + query), params); }
-        catch (legacy) {
-          if (legacy && typeof legacy === "object") {
-            legacy.attempts = [e.endpoint || apiBase() + "/v1/catalog/apps" + query, legacy.endpoint || apiBase() + "/identity/apps" + query];
-          }
-          throw legacy;
-        }
-      }
+      const r = await http("/identity/apps");
+      return normList(r, params);
     },
     async apps(params) {
-      const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== "" && v != null)).toString();
-      const query = qs ? "?" + qs : "";
-      const primary = apiBase() + "/v1/me/apps" + query;
-      const legacy = apiBase() + "/identity/apps" + query;
       try {
-        const r = await http("/v1/me/apps" + query);
+        const r = await http("/identity/apps");
         return normList(r, params);
       } catch (e) {
-        // Sadece rota bulunamadığında eski Registry uyumluluğuna geçilir.
-        // Ağ/5xx/401 hatalarında farklı bir uca sessizce geçmek gerçek hatayı saklar.
-        if (!e || ![404, 405].includes(e.status)) throw e;
-        try {
-          return normList(await http("/identity/apps" + query), params);
-        } catch (legacyError) {
-          const status = legacyError && legacyError.status || e.status || null;
-          const message = legacyError && legacyError.code === "NETWORK"
-            ? legacyError.message
-            : "Uygulama listesi için hem yeni hem eski API ucu başarısız oldu. Worker'da GET /v1/me/apps veya GET /identity/apps rotası bulunmalı.";
-          const combined = new ApiError(message, "APP_REGISTRY_UNAVAILABLE", status, legacyError || e);
-          combined.endpoint = (legacyError && legacyError.endpoint) || legacy;
-          combined.attempts = [e.endpoint || primary, (legacyError && legacyError.endpoint) || legacy];
-          combined.primaryError = { code: e.code, status: e.status, message: e.message };
-          combined.fallbackError = { code: legacyError && legacyError.code, status: legacyError && legacyError.status, message: legacyError && legacyError.message };
-          emitApiStatus({ state: "degraded", status, message, code: combined.code, endpoint: combined.endpoint });
-          throw combined;
-        }
+        if (e && typeof e === "object" && !e.endpoint) e.endpoint = apiBase() + "/identity/apps";
+        throw e;
       }
     },
     setAppName: (id, displayName) => http("/identity/apps/" + encodeURIComponent(id), { method: "PATCH", body: { displayName } }),
