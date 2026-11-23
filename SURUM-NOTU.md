@@ -41,3 +41,10 @@ Bu sürüm yalnızca **ön yüzü** kapsar. Identity Worker ve D1 şeması paket
 - Sağlık denetimi kök URL yerine `GET /identity/profile` kullanacak şekilde düzeltildi. `401/403` geçerli bir API yanıtı olarak çevrimiçi kabul edilir.
 - `/identity/*` Worker uçları için allowlist tabanlı CORS middleware ve testleri eklendi.
 - Worker modülünün entegrasyon adımları belgelendi. Gerçek Mikro-Klima Worker kaynak kodu teslim edilen arşivde bulunmadığı için canlı dağıtım yapılmadı.
+
+
+## 23 Kasım 2026 — Uygulamalar sayfası hata yönetimi
+- `app.js`: `/uygulamalar` artık profil veya uygulama listesi istekleri başarısız olduğunda tüm uygulamayı genel hata ekranına düşürmez. Sayfa içinde yeniden deneme, hata kodu, API adresi ve başarısız uçları gösterir; tanı bilgisini kopyalayabilir. Gerçek sunucu verisi gelmeden sahte uygulama/bağlantı durumu oluşturmaz.
+- `api.js`: yeni Registry uçları `404/405` döndürdüğünde eski `/identity/apps` adaptörüne geçilir; arama, kategori ve sayfalama parametreleri eski uca da aktarılır. Ağ, oturum ve 5xx hatalarında sessiz fallback yapılmaz. İki Registry rotası da yoksa iki denemenin ayrıntısı korunur. HTTP/ağ hataları hangi URL'de oluştuğunu taşır.
+- `style.css`: uygulama listesinin yükleniyor ve hata durumları için ayrı görünüm eklendi.
+- **Backend gereksinimi devam ediyor:** Identity Worker'da `GET /v1/me/apps` veya `GET /identity/apps` ve profil/oturum rotaları gerçekten bulunmalı. Bu ön yüz paketi sunucu rotası yaratmaz ve Cloudflare'a deploy yapmaz.

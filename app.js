@@ -287,26 +287,66 @@
       ${a.connected ? `<form data-nf="${esc(a.id)}" class="row"><input type="text" name="n" maxlength="32" aria-label="${esc(a.name)} için görünen ad" placeholder="Bu uygulamaya özel görünen ad" value="${esc(a.displayName)}" style="flex:1;min-width:160px"><button class="btn sm">Kaydet</button></form>` : ""}
       <div class="row sp app-actions">${open || connect || "<span></span>"}${a.connected ? `<button class="btn dng sm" data-dc="${esc(a.id)}">Bağlantıyı kaldır</button>` : ""}</div></article>`;
   }
-  async function vApps() {
-    user = await api.me();
-    const r = await api.apps(appsQ);
-    const pages = Math.max(1, Math.ceil(r.total / r.pageSize));
-    if (appsQ.page > pages) { appsQ.page = pages; return vApps(); }
+  function renderAppsUnavailable(error) {
+    const attempts = Array.isArray(error && error.attempts) ? error.attempts : [error && error.endpoint].filter(Boolean);
+    const routeText = attempts.length ? attempts.map((x) => `<code>${esc(x)}</code>`).join("<br>") : `<code>${esc(C.API_BASE)}/identity/apps</code>`;
+    const status = error && error.status ? `HTTP ${error.status}` : (error && error.code) || "NETWORK";
     layout("/uygulamalar", `<h1>Uygulamalarım</h1>
-      <p class="mut">Her uygulama yalnızca kendi izin kapsamını alır ve diğer uygulamaların oturum/verilerine erişemez. Bir bağlantıyı kaldırmak diğerlerini ve merkezi hesabı etkilemez.</p>
-      <div class="toolbar"><input type="search" id="aq" aria-label="Uygulama ara" placeholder="Uygulama ara…" value="${esc(appsQ.q)}">
-        <select id="ac" aria-label="Kategori"><option value="">Tüm kategoriler</option>${r.categories.map((c) => `<option value="${esc(c)}"${c === appsQ.category ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
-      <div class="hint" role="status">${r.total} uygulama</div>
-      <div class="app-grid">${r.items.length ? r.items.map(appCard).join("") : '<div class="card wide mut">Eşleşen uygulama yok.</div>'}</div>
-      ${pages > 1 ? `<div class="row pager"><button class="btn sm" id="pp"${appsQ.page <= 1 ? " disabled" : ""}>‹ Önceki</button><span class="mut sm">Sayfa ${appsQ.page} / ${pages}</span><button class="btn sm" id="pn"${appsQ.page >= pages ? " disabled" : ""}>Sonraki ›</button></div>` : ""}`);
-    let t; const aq = $("#aq");
-    aq.oninput = () => { clearTimeout(t); t = setTimeout(() => { appsQ.q = aq.value; appsQ.page = 1; vApps().then(() => { const n = $("#aq"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }); }, 300); };
-    $("#ac").onchange = (e) => { appsQ.category = e.target.value; appsQ.page = 1; vApps(); };
-    if ($("#pp")) $("#pp").onclick = () => { appsQ.page--; vApps(); };
-    if ($("#pn")) $("#pn").onclick = () => { appsQ.page++; vApps(); };
-    document.querySelectorAll("[data-dc]").forEach((b) => (b.onclick = async () => { if (!confirm("Bu uygulamanın hesabınıza erişimi kaldırılsın mı?")) return; try { await api.disconnectApp(b.dataset.dc); } catch (x) { toast(x.message); } vApps(); }));
-    document.querySelectorAll("[data-cn]").forEach((b) => (b.onclick = async () => { try { await api.connectApp(b.dataset.cn); } catch (x) { toast(x.message); } vApps(); }));
-    document.querySelectorAll("[data-nf]").forEach((f) => f.addEventListener("submit", async (e) => { e.preventDefault(); try { await api.setAppName(f.dataset.nf, new FormData(f).get("n")); toast("Görünen ad kaydedildi."); } catch (x) { toast(x.message); } }));
+      <p class="mut">Bağlı uygulamalarını, izinlerini ve uygulama erişimlerini buradan yönetebilirsin.</p>
+      <section class="card wide app-load-error" role="alert" aria-live="assertive">
+        <div class="app-load-error-mark" aria-hidden="true">!</div>
+        <div class="app-load-error-body">
+          <span class="badge warn">${esc(status)}</span>
+          <h2>Uygulama listesi yüklenemedi</h2>
+          <p>${esc((error && error.message) || "Kimlik sunucusundan uygulama listesi alınamadı.")}</p>
+          <div class="app-diagnostics">
+            <div><span class="mut sm">Kimlik API adresi</span><code>${esc(C.API_BASE || "tanımlı değil")}</code></div>
+            <div><span class="mut sm">Denetlenen uygulama uçları</span>${routeText}</div>
+            <div><span class="mut sm">Hata kodu</span><code>${esc((error && error.code) || "UNKNOWN")}</code></div>
+          </div>
+          <div class="row app-error-actions">
+            <button class="btn pri" id="apps-retry" type="button">Yeniden dene</button>
+            <button class="btn" id="apps-copy" type="button">Tanı bilgisini kopyala</button>
+            <a class="btn" href="#/profil">Profile dön</a>
+          </div>
+          <p class="hint">Bu ekran uygulama verisi uydurmaz veya sahte bağlantı durumu göstermez. Sunucu yanıt verdiğinde liste otomatik olarak gerçek hesabından yüklenir.</p>
+        </div>
+      </section>`);
+    const retry = $("#apps-retry");
+    if (retry) retry.onclick = () => { retry.disabled = true; vApps().finally(() => { if (retry.isConnected) retry.disabled = false; }); };
+    const copy = $("#apps-copy");
+    if (copy) copy.onclick = async () => {
+      const report = ["FOREVYE ID uygulamalar tanısı", "API: " + (C.API_BASE || "tanımlı değil"), "Kod: " + ((error && error.code) || "UNKNOWN"), "HTTP: " + ((error && error.status) || "—"), "Mesaj: " + ((error && error.message) || "—"), "Uçlar: " + attempts.join(" | ")].join("\n");
+      try { await navigator.clipboard.writeText(report); toast("Tanı bilgisi kopyalandı."); }
+      catch (e) { toast("Kopyalanamadı; ekrandaki hata kodunu paylaşabilirsin."); }
+    };
+  }
+  async function vApps() {
+    layout("/uygulamalar", `<h1>Uygulamalarım</h1><p class="mut">Bağlı uygulamalarını, izinlerini ve uygulama erişimlerini buradan yönetebilirsin.</p><div class="card wide app-loading" role="status"><span class="app-loading-dot"></span> Uygulama listesi sunucudan yükleniyor…</div>`);
+    try {
+      user = await api.me();
+      const r = await api.apps(appsQ);
+      const pages = Math.max(1, Math.ceil(r.total / Math.max(1, r.pageSize || 12)));
+      if (appsQ.page > pages) { appsQ.page = pages; return vApps(); }
+      layout("/uygulamalar", `<h1>Uygulamalarım</h1>
+        <p class="mut">Her uygulama yalnızca kendi izin kapsamını alır ve diğer uygulamaların oturum/verilerine erişemez. Bir bağlantıyı kaldırmak diğerlerini ve merkezi hesabı etkilemez.</p>
+        <div class="toolbar"><input type="search" id="aq" aria-label="Uygulama ara" placeholder="Uygulama ara…" value="${esc(appsQ.q)}">
+          <select id="ac" aria-label="Kategori"><option value="">Tüm kategoriler</option>${r.categories.map((c) => `<option value="${esc(c)}"${c === appsQ.category ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+        <div class="hint" role="status">${r.total} uygulama</div>
+        <div class="app-grid">${r.items.length ? r.items.map(appCard).join("") : '<div class="card wide mut">Eşleşen uygulama yok.</div>'}</div>
+        ${pages > 1 ? `<div class="row pager"><button class="btn sm" id="pp"${appsQ.page <= 1 ? " disabled" : ""}>‹ Önceki</button><span class="mut sm">Sayfa ${appsQ.page} / ${pages}</span><button class="btn sm" id="pn"${appsQ.page >= pages ? " disabled" : ""}>Sonraki ›</button></div>` : ""}`);
+      let t; const aq = $("#aq");
+      aq.oninput = () => { clearTimeout(t); t = setTimeout(() => { appsQ.q = aq.value; appsQ.page = 1; vApps().then(() => { const n = $("#aq"); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }); }, 300); };
+      $("#ac").onchange = (e) => { appsQ.category = e.target.value; appsQ.page = 1; vApps(); };
+      if ($("#pp")) $("#pp").onclick = () => { appsQ.page--; vApps(); };
+      if ($("#pn")) $("#pn").onclick = () => { appsQ.page++; vApps(); };
+      document.querySelectorAll("[data-dc]").forEach((b) => (b.onclick = async () => { if (!confirm("Bu uygulamanın hesabınıza erişimi kaldırılsın mı?")) return; try { await api.disconnectApp(b.dataset.dc); } catch (x) { toast(x.message); } vApps(); }));
+      document.querySelectorAll("[data-cn]").forEach((b) => (b.onclick = async () => { try { await api.connectApp(b.dataset.cn); } catch (x) { toast(x.message); } vApps(); }));
+      document.querySelectorAll("[data-nf]").forEach((f) => f.addEventListener("submit", async (e) => { e.preventDefault(); try { await api.setAppName(f.dataset.nf, new FormData(f).get("n")); toast("Görünen ad kaydedildi."); } catch (x) { toast(x.message); } }));
+    } catch (e) {
+      if (e && e.code === "UNAUTHORIZED") throw e;
+      renderAppsUnavailable(e);
+    }
   }
 
   /* ---------------- Uygulama girişi ("FOREVYE ID ile giriş") ---------------- */

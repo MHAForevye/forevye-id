@@ -44,7 +44,14 @@
     return { items: r.slice((p - 1) * size, p * size), total, page: p, pageSize: size, categories };
   }
 
-  class ApiError extends Error { constructor(msg, code, status, cause) { super(msg); this.name = "ApiError"; this.code = code || "ERROR"; this.status = status || null; if (cause) this.cause = cause; } }
+  class ApiError extends Error {
+    constructor(msg, code, status, cause) {
+      super(msg); this.name = "ApiError"; this.code = code || "ERROR"; this.status = status || null;
+      if (cause) this.cause = cause;
+      this.endpoint = null;
+      this.attempts = null;
+    }
+  }
 
   /* ---------- Doğrulayıcılar (sunucu da aynı kuralları uygular) ---------- */
   function validateUsername(u) {
@@ -421,9 +428,15 @@
     const headers = { Accept: "application/json" };
     if (auth && tokens().accessToken) headers.Authorization = "Bearer " + tokens().accessToken;
     if (body !== undefined && body !== null) headers["Content-Type"] = "application/json";
-    const res = await timedFetch(base + path, {
-      method, headers, body: form || (body !== undefined && body !== null ? JSON.stringify(body) : undefined)
-    });
+    let res;
+    try {
+      res = await timedFetch(base + path, {
+        method, headers, body: form || (body !== undefined && body !== null ? JSON.stringify(body) : undefined)
+      });
+    } catch (e) {
+      if (e && typeof e === "object") e.endpoint = base + path;
+      throw e;
+    }
     if (res.status === 401 && auth) {
       if (retry && tokens().refreshToken) {
         const refreshed = await refreshAccessToken();
@@ -435,6 +448,7 @@
     const data = await readResponse(res);
     if (!res.ok) {
       const err = responseError(res, data);
+      err.endpoint = base + path;
       if (res.status >= 500) emitApiStatus({ state: "degraded", message: err.message, status: res.status });
       throw err;
     }
@@ -507,13 +521,47 @@
     /* Registry katalogu: yeni uç yoksa (404) eski /identity/apps adaptörüne düşer. */
     async catalog(params) {
       const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== "" && v != null)).toString();
-      try { const r = await http("/v1/catalog/apps" + (qs ? "?" + qs : "")); return normList(r, params); }
-      catch (e) { if (e.code !== "HTTP_404") throw e; return normList(await http("/identity/apps"), params); }
+      const query = qs ? "?" + qs : "";
+      try { const r = await http("/v1/catalog/apps" + query); return normList(r, params); }
+      catch (e) {
+        if (!e || ![404, 405].includes(e.status)) throw e;
+        try { return normList(await http("/identity/apps" + query), params); }
+        catch (legacy) {
+          if (legacy && typeof legacy === "object") {
+            legacy.attempts = [e.endpoint || apiBase() + "/v1/catalog/apps" + query, legacy.endpoint || apiBase() + "/identity/apps" + query];
+          }
+          throw legacy;
+        }
+      }
     },
     async apps(params) {
       const qs = new URLSearchParams(Object.entries(params || {}).filter(([, v]) => v !== "" && v != null)).toString();
-      try { const r = await http("/v1/me/apps" + (qs ? "?" + qs : "")); return normList(r, params); }
-      catch (e) { if (e.code !== "HTTP_404") throw e; return normList(await http("/identity/apps"), params); }
+      const query = qs ? "?" + qs : "";
+      const primary = apiBase() + "/v1/me/apps" + query;
+      const legacy = apiBase() + "/identity/apps" + query;
+      try {
+        const r = await http("/v1/me/apps" + query);
+        return normList(r, params);
+      } catch (e) {
+        // Sadece rota bulunamadığında eski Registry uyumluluğuna geçilir.
+        // Ağ/5xx/401 hatalarında farklı bir uca sessizce geçmek gerçek hatayı saklar.
+        if (!e || ![404, 405].includes(e.status)) throw e;
+        try {
+          return normList(await http("/identity/apps" + query), params);
+        } catch (legacyError) {
+          const status = legacyError && legacyError.status || e.status || null;
+          const message = legacyError && legacyError.code === "NETWORK"
+            ? legacyError.message
+            : "Uygulama listesi için hem yeni hem eski API ucu başarısız oldu. Worker'da GET /v1/me/apps veya GET /identity/apps rotası bulunmalı.";
+          const combined = new ApiError(message, "APP_REGISTRY_UNAVAILABLE", status, legacyError || e);
+          combined.endpoint = (legacyError && legacyError.endpoint) || legacy;
+          combined.attempts = [e.endpoint || primary, (legacyError && legacyError.endpoint) || legacy];
+          combined.primaryError = { code: e.code, status: e.status, message: e.message };
+          combined.fallbackError = { code: legacyError && legacyError.code, status: legacyError && legacyError.status, message: legacyError && legacyError.message };
+          emitApiStatus({ state: "degraded", status, message, code: combined.code, endpoint: combined.endpoint });
+          throw combined;
+        }
+      }
     },
     setAppName: (id, displayName) => http("/identity/apps/" + encodeURIComponent(id), { method: "PATCH", body: { displayName } }),
     connectApp: (id) => http("/identity/apps/" + encodeURIComponent(id), { method: "POST" }),

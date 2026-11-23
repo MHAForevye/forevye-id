@@ -89,3 +89,17 @@ main{padding:1.5rem 1.5rem 5rem;max-width:900px;width:100%}
 .connection-pill.offline{border-color:rgba(213,125,112,.55)}
 .connection-pill.online{border-color:rgba(128,182,154,.35)}
 @media(max-width:520px){.connection-pill{align-items:flex-start;flex-wrap:wrap}.connection-pill .btn{margin-left:1.35rem}}
+
+/* Uygulamalar sayfası: yükleme ve bağlantı hatası durumları */
+.app-loading{display:flex;align-items:center;gap:.65rem;color:var(--mut);min-height:76px}
+.app-loading-dot{width:9px;height:9px;border-radius:50%;background:var(--acc);box-shadow:0 0 0 4px rgba(217,168,94,.13);flex:none}
+.app-load-error{display:flex;gap:1rem;align-items:flex-start;margin-top:1rem;border-color:rgba(215,164,94,.45)}
+.app-load-error-mark{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;border:1px solid var(--warn);color:var(--warn);font-weight:800;font-size:1.2rem;flex:none}
+.app-load-error-body{min-width:0;flex:1}
+.app-load-error-body h2{margin:.55rem 0 .25rem}
+.app-load-error-body>p{margin:.3rem 0;color:var(--mut)}
+.app-diagnostics{display:grid;gap:.65rem;margin:1rem 0;padding:.85rem;background:var(--bg2);border:1px solid var(--line);border-radius:10px}
+.app-diagnostics>div{display:grid;gap:.12rem;min-width:0}
+.app-diagnostics code{font: .82rem/1.45 ui-monospace,Menlo,Consolas,monospace;overflow-wrap:anywhere;color:var(--acc-lt)}
+.app-error-actions{margin-top:.9rem}
+@media(max-width:520px){.app-load-error{gap:.7rem;padding:1rem}.app-load-error-mark{width:30px;height:30px}.app-error-actions>*{flex:1}}

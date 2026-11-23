@@ -26,7 +26,7 @@ Statik HTML/CSS/JS uygulaması (derleme yok). İki modda çalışır:
 4. Sayfa üstündeki **Kimlik sunucusu** satırından bağlantıyı sınayın. Kök yolun 404 dönmesi Worker'ın cevap verdiğini gösterir; bu, `/identity/*` uçlarının doğru kurulduğunu tek başına kanıtlamaz.
 
 ### Bağlantı sorunlarını ayırma
-- `NETWORK`: Tarayıcı Worker'a erişemedi veya CORS yanıtını okuyamadı. API adresi, Worker dağıtımı, DNS ve CORS birlikte kontrol edilmelidir.
+- `NETWORK`: Tarayıcı Worker'a erişemedi veya CORS yanıtını okuyamadı. API adresi, Worker dağıtımı, DNS ve CORS birlikte kontrol edilmelidir. Uygulamalar sayfası artık bağlantı hatasında kapanmaz; başarısız API uçlarını ve tekrar deneme seçeneğini gösterir.
 - `TIMEOUT`: Worker belirlenen sürede yanıt vermedi. Cloudflare Worker günlüklerini ve bağlı D1 durumunu kontrol edin.
 - `HTTP_404`: Alan adı yanıt veriyor ama istenen `/identity/*` rotası bu Worker sürümünde bulunmuyor olabilir.
 - `HTTP_5xx`: Worker çalışıyor ancak sunucu tarafında hata oluşuyor; Worker günlükleri ve D1 binding/migration kontrol edilmelidir.
@@ -39,6 +39,7 @@ Statik HTML/CSS/JS uygulaması (derleme yok). İki modda çalışır:
 - `POST /identity/token/refresh` — `{refreshToken}` → `{accessToken, refreshToken}`
 - `POST /identity/email/resend` — doğrulama kodunu yeniden gönder
 - `GET /identity/security-events` — güvenlik olayları listesi
+- `GET /v1/me/apps` (tercih edilen) veya eski uyumluluk için `GET /identity/apps` — uygulama listesi
 - `PATCH|POST|DELETE /identity/apps/{appId}` — görünen ad / bağla / kaldır
 - `DELETE /identity/oauth/google` — Google bağlantısını kaldır
 - `DELETE /identity/account` — gövde: `{password, unlinkGoogle}`
