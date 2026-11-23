@@ -8,6 +8,39 @@
   let user = null;
   const ctx = {};
   let lastMail = 0;
+  let serverState = { state: C.MOCK ? "demo" : "checking" };
+
+  function renderServerStatus(state) {
+    serverState = state || serverState;
+    const host = $("#connection-status");
+    if (!host) return;
+    if (C.MOCK) { host.hidden = true; return; }
+    const s = serverState;
+    const cls = s.state === "online" ? "online" : s.state === "degraded" ? "degraded" : s.state === "offline" ? "offline" : "checking";
+    const label = cls === "online" ? "Kimlik sunucusu erişilebilir" : cls === "degraded" ? "Sunucu yanıt veriyor ancak hata döndürüyor" : cls === "offline" ? "Kimlik sunucusuna bağlantı yok" : "Kimlik sunucusu kontrol ediliyor";
+    const extra = s.state === "offline" ? `<small>${esc(s.message || "Worker, DNS veya CORS bağlantısını kontrol edin.")}</small>` : s.state === "degraded" ? `<small>HTTP ${esc(s.status || "5xx")} · Worker günlüklerini kontrol edin.</small>` : s.state === "online" ? `<small>HTTP ${esc(s.status)} · ${esc(s.latencyMs)} ms</small>` : `<small>${esc(C.API_BASE)}</small>`;
+    host.hidden = false;
+    host.innerHTML = `<div class="connection-pill ${cls}"><span class="connection-dot"></span><span class="connection-copy"><b>${label}</b>${extra}</span><button type="button" class="btn sm" data-server-check>Bağlantıyı sına</button></div>`;
+  }
+  async function checkServer() {
+    if (C.MOCK || !api.health) return;
+    renderServerStatus({ state: "checking" });
+    const result = await api.health();
+    if (result.mode === "mock") return;
+    if (!result.reachable) renderServerStatus({ state: "offline", message: result.message });
+    else if (!result.healthy) renderServerStatus({ state: "degraded", status: result.status });
+    else renderServerStatus({ state: "online", status: result.status, latencyMs: result.latencyMs });
+  }
+  document.addEventListener("click", (event) => {
+    const button = event.target && event.target.closest && event.target.closest("[data-server-check]");
+    if (button) { button.disabled = true; checkServer().finally(() => { if (button.isConnected) button.disabled = false; }); }
+  });
+  window.addEventListener("fid:api-status", (event) => {
+    const d = event.detail || {};
+    if (d.state === "offline") renderServerStatus({ state: "offline", message: d.message });
+    else if (d.state === "degraded") renderServerStatus({ state: "degraded", status: d.status });
+    else if (d.state === "online") renderServerStatus({ state: "online", status: d.status, latencyMs: d.latencyMs || "—" });
+  });
 
   function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 3200); }
   /* "FOREVYE ID ile giriş" yarıda kaldıysa (önce giriş gerekti) giriş sonrası oraya dön */
@@ -31,7 +64,7 @@
       finally { if (b && document.contains(b)) b.disabled = false; mailCheck(); }
     });
   }
-  const authShell = (inner) => `<div class="auth"><div class="card"><div class="brand" style="margin-bottom:1.1rem"><span class="logo">F</span>FOREVYE ID</div>${inner}</div></div>`;
+  const authShell = (inner) => `<div class="auth"><div class="card"><div class="brand" style="margin-bottom:1.1rem"><span class="logo">F</span>FOREVYE ID</div>${inner}${!C.MOCK && serverState.state === "offline" ? `<p class="hint">Giriş, kayıt ve doğrulama işlemleri için kimlik sunucusu bağlantısı gereklidir. Üstteki bağlantı durumundan tekrar deneyebilirsiniz.</p>` : ""}</div></div>`;
   const pwHint = `<div class="hint">En az ${C.PASSWORD_MIN_LENGTH} karakter, harf ve rakam içermeli.</div>`;
 
   /* ---------------- Kimlik ekranları ---------------- */
@@ -346,5 +379,6 @@
     demoBox(); mailCheck();
   }
   window.addEventListener("hashchange", route);
+  if (!C.MOCK) checkServer();
   route();
 })();

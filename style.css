@@ -76,3 +76,16 @@ main{padding:1.5rem 1.5rem 5rem;max-width:900px;width:100%}
  .demo-btn{bottom:3.6rem}.mailbox{bottom:6.4rem}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* FOREVYE ID sunucu bağlantı durumu */
+.connection-status{position:sticky;top:0;z-index:50;padding:.5rem .8rem;background:#090907;border-bottom:1px solid var(--line)}
+.connection-pill{max-width:1180px;margin:0 auto;display:flex;gap:.65rem;align-items:center;padding:.5rem .7rem;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-size:.88rem}
+.connection-dot{width:9px;height:9px;display:block;border-radius:50%;background:var(--warn);flex:none}
+.connection-pill.online .connection-dot{background:var(--ok)}
+.connection-pill.offline .connection-dot{background:var(--err)}
+.connection-pill.degraded .connection-dot{background:var(--warn)}
+.connection-copy{min-width:0;display:flex;flex:1;flex-direction:column;line-height:1.35}
+.connection-copy small{color:var(--mut);overflow-wrap:anywhere;font-size:.78rem;margin-top:.12rem}
+.connection-pill.offline{border-color:rgba(213,125,112,.55)}
+.connection-pill.online{border-color:rgba(128,182,154,.35)}
+@media(max-width:520px){.connection-pill{align-items:flex-start;flex-wrap:wrap}.connection-pill .btn{margin-left:1.35rem}}

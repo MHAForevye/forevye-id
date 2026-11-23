@@ -26,3 +26,12 @@ Bu sürüm yalnızca **ön yüzü** kapsar. Identity Worker ve D1 şeması paket
 - `lamp.js` **silindi**; `index.html`'den script satırı, `style.css`'ten lamba sahnesi/kumandası, radial ışık, parlama (glow) ve `--lamp-*` değişkenleri kaldırıldı. Giriş, profil, güvenlik ve uygulama kataloğu işlevleri değişmedi (`app.js`/`api.js` dokunulmadı).
 - Düz koyu füme zemin, ince çizgi, amber yalnızca ana eylem/odakta. `prefers-reduced-motion` korunuyor.
 - **Hâlâ YAPILMADI:** Identity/Mikro-Klima Worker kaynağı bu paketlerde yok; Registry, grant, PKCE code exchange, refresh rotation backend'i uygulanmadı ve "SSO tamamlandı" denemez.
+
+
+## 23 Kasım 2026 — Sunucu bağlantısı ve istemci dayanıklılığı
+- `api.js`: API adresi HTTPS olarak doğrulanır ve sondaki `/` normalize edilir; her istek ve sağlık kontrolüne zaman aşımı eklenir. Ağ/CORS, timeout, 404 ve 5xx mesajları ayrıştırılır. JSON dışı hata yanıtları da okunur. Eşzamanlı 401 yanıtları tek bir refresh işlemini paylaşır; geçersiz refresh token temizlenir, bağlantı kesintisinde token gereksiz yere silinmez. Kök URL sağlık kontrolü eklendi (404 yanıtı da Worker'ın erişilebilir olduğunu gösterir).
+- `config.js`: `API_TIMEOUT_MS` ve `HEALTH_TIMEOUT_MS` ayarları eklendi.
+- `app.js`, `index.html`, `style.css`: sayfanın üstünde canlı sunucu durumu ve tekrar deneme eylemi eklendi.
+- `README.md`: Cloudflare CORS/Worker/route kontrol listesi ve hata kodu açıklamaları eklendi.
+- **Backend notu:** Bu kaynak arşivinde Identity Worker ve D1 şeması bulunmadığından sunucu tarafı rota/CORS/DNS değişikliği veya deploy yapılmadı.
+- `SUNUCU-BAGLANTI-KONTROLU.md` (yeni): Cloudflare Worker, CORS, D1, ID_ORIGIN ve Nexus ID_URL/ID_API_URL için yayın kontrol listesi.

@@ -44,7 +44,7 @@
     return { items: r.slice((p - 1) * size, p * size), total, page: p, pageSize: size, categories };
   }
 
-  class ApiError extends Error { constructor(msg, code) { super(msg); this.code = code || "ERROR"; } }
+  class ApiError extends Error { constructor(msg, code, status, cause) { super(msg); this.name = "ApiError"; this.code = code || "ERROR"; this.status = status || null; if (cause) this.cause = cause; } }
 
   /* ---------- Doğrulayıcılar (sunucu da aynı kuralları uygular) ---------- */
   function validateUsername(u) {
@@ -170,6 +170,7 @@
   }
 
   const mock = {
+    async health() { return { reachable: true, healthy: true, mode: "mock", status: 200, latencyMs: 0 }; },
     async register({ email, password }) {
       const db = loadDb(); email = (email || "").trim().toLowerCase();
       if (!EMAIL_RE.test(email)) throw new ApiError("Geçerli bir e-posta adresi girin.", "VALIDATION");
@@ -342,29 +343,126 @@
    *  Not: bölüm 15'te olmayan uçlar README'de "Varsayım" olarak işaretlidir.
    * ====================================================================== */
   const TK = "fid_tokens";
+  let refreshInFlight = null;
+  function apiBase() {
+    const raw = String(C.API_BASE || "").trim().replace(/\/+$/, "");
+    if (!/^https:\/\//i.test(raw)) throw new ApiError("API_BASE geçerli bir HTTPS adresi olmalı. config.js dosyasını kontrol edin.", "CONFIG");
+    return raw;
+  }
+  function emitApiStatus(detail) {
+    try { window.dispatchEvent(new CustomEvent("fid:api-status", { detail })); } catch (e) {}
+  }
+  function saveTokens(value) {
+    if (!value || typeof value.accessToken !== "string" || !value.accessToken) {
+      throw new ApiError("Sunucu oturum anahtarı döndürmedi. API yanıt sözleşmesini kontrol edin.", "BAD_RESPONSE");
+    }
+    const next = { accessToken: value.accessToken, refreshToken: typeof value.refreshToken === "string" ? value.refreshToken : null };
+    localStorage.setItem(TK, JSON.stringify(next));
+    return next;
+  }
+  const loadTokens = () => { try { const t = JSON.parse(localStorage.getItem(TK) || "{}"); return t && typeof t === "object" ? t : {}; } catch (e) { return {}; } };
+  const clearTokens = () => { try { localStorage.removeItem(TK); } catch (e) {} };
+  const tokens = loadTokens;
+
+  async function timedFetch(url, init = {}, timeoutMs = C.API_TIMEOUT_MS || 12000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
+    } catch (e) {
+      if (controller.signal.aborted || (e && e.name === "AbortError")) {
+        const err = new ApiError("Sunucu isteği zaman aşımına uğradı (" + Math.round(timeoutMs / 1000) + " sn). Worker yanıt vermiyor olabilir.", "TIMEOUT");
+        emitApiStatus({ state: "offline", message: err.message, code: err.code });
+        throw err;
+      }
+      const origin = (window.location && window.location.origin) || "bu site";
+      const err = new ApiError("Sunucu isteği tamamlanamadı. Worker kapalı/yanlış adresli olabilir veya CORS, " + origin + " kaynağına izin vermiyor. API_BASE: " + String(C.API_BASE || "tanımsız"), "NETWORK", null, e);
+      emitApiStatus({ state: "offline", message: err.message, code: err.code });
+      throw err;
+    } finally { clearTimeout(timer); }
+  }
+  async function readResponse(res) {
+    if (res.status === 204) return null;
+    const raw = await res.text().catch(() => "");
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) { return { message: raw.slice(0, 500), nonJson: true }; }
+  }
+  function responseError(res, data) {
+    let msg = data && (data.message || data.err || (typeof data.error === "string" ? data.error : data.error && data.error.message));
+    if (!msg && res.status === 404) msg = "Bu API uç noktası sunucuda bulunamadı (404). Worker sürümünü ve /identity rotalarını kontrol edin.";
+    if (!msg && res.status === 405) msg = "Sunucu bu isteği desteklemiyor (405). API uç noktası veya HTTP yöntemi uyumsuz.";
+    if (!msg && res.status === 429) msg = "Çok fazla istek gönderildi. Biraz bekleyip tekrar deneyin.";
+    if (!msg && res.status >= 500) msg = "Kimlik sunucusunda geçici bir hata oluştu (" + res.status + "). Worker günlüklerini kontrol edin.";
+    if (!msg) msg = "İstek başarısız (" + res.status + ")";
+    return new ApiError(msg, (data && data.code) || "HTTP_" + res.status, res.status);
+  }
+  async function refreshAccessToken() {
+    const current = tokens();
+    if (!current.refreshToken) return false;
+    if (!refreshInFlight) {
+      refreshInFlight = (async () => {
+        const res = await timedFetch(apiBase() + "/identity/token/refresh", {
+          method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ refreshToken: current.refreshToken })
+        }, C.API_TIMEOUT_MS || 12000);
+        const data = await readResponse(res);
+        if (!res.ok) {
+          if ([400, 401, 403, 404].includes(res.status)) { clearTokens(); return false; }
+          throw responseError(res, data);
+        }
+        saveTokens(data);
+        return true;
+      })().finally(() => { refreshInFlight = null; });
+    }
+    return refreshInFlight;
+  }
+  async function http(path, { method = "GET", body, form, auth = true, retry = true } = {}) {
+    const base = apiBase();
+    const headers = { Accept: "application/json" };
+    if (auth && tokens().accessToken) headers.Authorization = "Bearer " + tokens().accessToken;
+    if (body !== undefined && body !== null) headers["Content-Type"] = "application/json";
+    const res = await timedFetch(base + path, {
+      method, headers, body: form || (body !== undefined && body !== null ? JSON.stringify(body) : undefined)
+    });
+    if (res.status === 401 && auth) {
+      if (retry && tokens().refreshToken) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) return http(path, { method, body, form, auth, retry: false });
+      }
+      clearTokens();
+      throw new ApiError("Oturumunuz sona erdi. Lütfen yeniden giriş yapın.", "UNAUTHORIZED", 401);
+    }
+    const data = await readResponse(res);
+    if (!res.ok) {
+      const err = responseError(res, data);
+      if (res.status >= 500) emitApiStatus({ state: "degraded", message: err.message, status: res.status });
+      throw err;
+    }
+    emitApiStatus({ state: "online", status: res.status });
+    return data;
+  }
+  async function checkServer() {
+    const started = Date.now();
+    let endpoint = String(C.API_BASE || "");
+    try {
+      endpoint = apiBase();
+      // Kök yolun 404 dönmesi bile Worker'ın cevap verdiğini gösterir; health rotası varsayılmaz.
+      const res = await timedFetch(endpoint + "/", { method: "GET", headers: { Accept: "application/json,text/plain,*/*" } }, C.HEALTH_TIMEOUT_MS || 8000);
+      const result = { reachable: true, healthy: res.status < 500, status: res.status, latencyMs: Date.now() - started, endpoint };
+      emitApiStatus({ state: result.healthy ? "online" : "degraded", status: res.status, latencyMs: result.latencyMs });
+      return result;
+    } catch (e) {
+      const result = { reachable: false, healthy: false, code: e.code || "NETWORK", message: e.message, latencyMs: Date.now() - started, endpoint, origin: (window.location && window.location.origin) || "" };
+      emitApiStatus({ state: "offline", message: result.message, code: result.code });
+      return result;
+    }
+  }
   function loadGis() {
     return new Promise((res, rej) => {
       if (window.google && google.accounts && google.accounts.id) return res();
       const s = document.createElement("script"); s.src = "https://accounts.google.com/gsi/client"; s.async = true;
       s.onload = res; s.onerror = () => rej(new ApiError("Google betiği yüklenemedi.", "NETWORK")); document.head.appendChild(s);
     });
-  }
-  const tokens = () => { try { return JSON.parse(localStorage.getItem(TK)) || {}; } catch (e) { return {}; } };
-  async function http(path, { method = "GET", body, form, auth = true, retry = true } = {}) {
-    const headers = {};
-    if (auth && tokens().accessToken) headers.Authorization = "Bearer " + tokens().accessToken;
-    if (body) headers["Content-Type"] = "application/json";
-    let res;
-    try { res = await fetch(C.API_BASE + path, { method, headers, body: form || (body ? JSON.stringify(body) : undefined) }); }
-    catch (e) { throw new ApiError("Sunucuya ulaşılamadı. API_BASE ve CORS ayarlarını kontrol edin.", "NETWORK"); }
-    if (res.status === 401 && auth && retry && tokens().refreshToken) {
-      const r = await fetch(C.API_BASE + "/identity/token/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken: tokens().refreshToken }) });
-      if (r.ok) { localStorage.setItem(TK, JSON.stringify(await r.json())); return http(path, { method, body, form, auth, retry: false }); }
-      localStorage.removeItem(TK);
-    }
-    let data = null; try { data = await res.json(); } catch (e) {}
-    if (!res.ok) throw new ApiError((data && (data.message || data.err || (typeof data.error === "string" ? data.error : ""))) || "İstek başarısız (" + res.status + ")", (data && data.code) || "HTTP_" + res.status);
-    return data;
   }
   /* Sunucu dizi de döndürebilir ({items,total,...} da); ikincisi sunucu taraflı sayfalama demektir. */
   function normList(r, params) {
@@ -373,10 +471,11 @@
     return { items, total: r.total != null ? r.total : items.length, page: r.page || 1, pageSize: r.pageSize || items.length || 12, categories: r.categories || [...new Set(items.map((a) => a.category))].sort() };
   }
   const real = {
+    health: checkServer,
     register: (b) => http("/identity/register", { method: "POST", body: b, auth: false }),
     verifyEmail: (b) => http("/identity/email/verify", { method: "POST", body: b, auth: false }),
     resendVerification: (b) => http("/identity/email/resend", { method: "POST", body: b, auth: false }),
-    async login(b) { const r = await http("/identity/login", { method: "POST", body: b, auth: false }); if (r.accessToken) localStorage.setItem(TK, JSON.stringify({ accessToken: r.accessToken, refreshToken: r.refreshToken })); if (r.accessToken && !r.user) r.user = await real.me(); return r; },
+    async login(b) { const r = await http("/identity/login", { method: "POST", body: b, auth: false }); if (r.accessToken) saveTokens(r); else if (r.twoFactorRequired) clearTokens(); if (r.accessToken && !r.user) r.user = await real.me(); return r; },
     async logout() { try { await http("/identity/logout", { method: "POST" }); } finally { localStorage.removeItem(TK); } return { ok: true }; },
     async logoutAll() { try { await http("/identity/logout-all", { method: "POST" }); } finally { localStorage.removeItem(TK); } return { ok: true }; },
     forgot: (b) => http("/identity/password/forgot", { method: "POST", body: b, auth: false }),
@@ -418,7 +517,7 @@
     },
     async googleSignIn(credential) {
       const r = await http("/identity/oauth/google", { method: "POST", body: { credential }, auth: false });
-      if (r.accessToken) { localStorage.setItem(TK, JSON.stringify({ accessToken: r.accessToken, refreshToken: r.refreshToken })); r.user = await real.me(); }
+      if (r.accessToken) { saveTokens(r); r.user = await real.me(); } else if (r.twoFactorRequired) clearTokens();
       return r;
     },
     googleLink: (credential) => http("/identity/oauth/google/link", { method: "POST", body: { credential } }),

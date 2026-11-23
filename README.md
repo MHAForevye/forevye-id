@@ -20,9 +20,18 @@ Statik HTML/CSS/JS uygulaması (derleme yok). İki modda çalışır:
 3. Adres: `https://KULLANICI.github.io/REPO/`
 
 ## Sunucuyu bağlama
-1. `config.js` içinde `MOCK: false` yap, `API_BASE`'i sunucu adresine çevir.
-2. Sunucuda CORS'u Pages adresin için aç (`Access-Control-Allow-Origin`, `Authorization` başlığı).
-3. Sunucu HTTPS (TLS) olmalı.
+1. `config.js` içinde `MOCK: false` yap; `API_BASE` değerini FOREVYE ID uçlarını gerçekten sunan Worker'ın tam HTTPS adresiyle eşleştir (sonunda `/` olmasın). Varsayılan adres `https://mikroklimakontrolmerkezi.forevye.workers.dev` olarak korunmuştur; Cloudflare'da Worker'ın hâlâ bu ada deploy edildiği doğrulanmalıdır.
+2. Worker CORS allowlist'ine yayınlanan Pages origin'ini ekle. `OPTIONS` preflight yanıtı; `GET, POST, PATCH, DELETE, OPTIONS` yöntemleri ve `Authorization, Content-Type` başlıklarına izin vermeli. CORS başlıkları hata yanıtlarında da bulunmalı.
+3. Sunucu HTTPS (TLS) olmalı. DNS/Worker/route doğru olsa bile CORS izin listesinde Pages origin yoksa tarayıcı bağlantıyı engeller.
+4. Sayfa üstündeki **Kimlik sunucusu** satırından bağlantıyı sınayın. Kök yolun 404 dönmesi Worker'ın cevap verdiğini gösterir; bu, `/identity/*` uçlarının doğru kurulduğunu tek başına kanıtlamaz.
+
+### Bağlantı sorunlarını ayırma
+- `NETWORK`: Tarayıcı Worker'a erişemedi veya CORS yanıtını okuyamadı. API adresi, Worker dağıtımı, DNS ve CORS birlikte kontrol edilmelidir.
+- `TIMEOUT`: Worker belirlenen sürede yanıt vermedi. Cloudflare Worker günlüklerini ve bağlı D1 durumunu kontrol edin.
+- `HTTP_404`: Alan adı yanıt veriyor ama istenen `/identity/*` rotası bu Worker sürümünde bulunmuyor olabilir.
+- `HTTP_5xx`: Worker çalışıyor ancak sunucu tarafında hata oluşuyor; Worker günlükleri ve D1 binding/migration kontrol edilmelidir.
+
+**Önemli:** Bu ön yüz ZIP'i Identity Worker kaynak kodunu, D1 migration/şema dosyalarını veya Cloudflare hesabını içermez. Bu nedenle CORS allowlist, `ID_ORIGIN`, `RESEND_API_KEY`, D1 şeması ve gerçek API rotaları Cloudflare tarafında ayrıca doğrulanmalıdır. Ayrıntılı liste: `SUNUCU-BAGLANTI-KONTROLU.md`.
 
 ### Beklenen uçlar
 Şartname bölüm 15'teki uçlar kullanılır. **Şartnamede olmayıp benim eklediğim (varsayım) uçlar:**
