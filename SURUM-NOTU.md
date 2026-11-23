@@ -21,3 +21,8 @@ Bu sürüm yalnızca **ön yüzü** kapsar. Identity Worker ve D1 şeması paket
 - `fid_tokens` hâlâ `localStorage`'da: HttpOnly cookie/BFF ancak sunucu tarafı gelince kaldırılabilir.
 - Gerçek sunucudaki `/v1/*` uçları henüz yok; ön yüz 404'te eski `/identity/apps`'e düşer. Gerçek uç davranışı test EDİLMEDİ.
 - `assets/forevye-id-cover.png` ön yüze eklenmedi.
+
+## 23 Kasım 2026 — Tasarım sadeleştirme (yalnızca ön yüz)
+- `lamp.js` **silindi**; `index.html`'den script satırı, `style.css`'ten lamba sahnesi/kumandası, radial ışık, parlama (glow) ve `--lamp-*` değişkenleri kaldırıldı. Giriş, profil, güvenlik ve uygulama kataloğu işlevleri değişmedi (`app.js`/`api.js` dokunulmadı).
+- Düz koyu füme zemin, ince çizgi, amber yalnızca ana eylem/odakta. `prefers-reduced-motion` korunuyor.
+- **Hâlâ YAPILMADI:** Identity/Mikro-Klima Worker kaynağı bu paketlerde yok; Registry, grant, PKCE code exchange, refresh rotation backend'i uygulanmadı ve "SSO tamamlandı" denemez.
