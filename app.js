@@ -8,6 +8,45 @@
   let user = null;
   const ctx = {};
   let lastMail = 0;
+  let serverState = { state: C.MOCK ? "demo" : "checking" };
+
+  function renderServerStatus(state) {
+    serverState = state || serverState;
+    const host = $("#connection-status");
+    if (!host) return;
+    if (C.MOCK) { host.hidden = true; return; }
+    const s = serverState;
+    const cls = s.state === "online" ? "online" : s.state === "degraded" ? "degraded" : s.state === "offline" ? "offline" : "checking";
+    const label = cls === "online" ? "Kimlik sunucusu erişilebilir" : cls === "degraded" ? "Sunucu yanıt veriyor ancak hata döndürüyor" : cls === "offline" ? "Kimlik sunucusuna bağlantı yok" : "Kimlik sunucusu kontrol ediliyor";
+    const extra = s.state === "offline"
+      ? `<small>${esc(s.message || "Worker adresi, DNS ve CORS ayarlarını kontrol edin.")}</small>`
+      : s.state === "degraded"
+        ? `<small>HTTP ${esc(s.status || "5xx")} · ${esc(s.message || "Identity API rotası yanıt vermedi.")}</small>`
+        : s.state === "online"
+          ? `<small>GET /identity/profile · HTTP ${esc(s.status)}${s.status === 401 || s.status === 403 ? " · API açık, oturum gerekiyor" : ""} · ${esc(s.latencyMs)} ms</small>`
+          : `<small>${esc(C.API_BASE)} · /identity/profile</small>`;
+    host.hidden = false;
+    host.innerHTML = `<div class="connection-pill ${cls}"><span class="connection-dot"></span><span class="connection-copy"><b>${label}</b>${extra}</span><button type="button" class="btn sm" data-server-check>Bağlantıyı sına</button></div>`;
+  }
+  async function checkServer() {
+    if (C.MOCK || !api.health) return;
+    renderServerStatus({ state: "checking" });
+    const result = await api.health();
+    if (result.mode === "mock") return;
+    if (!result.reachable) renderServerStatus({ state: "offline", message: result.message });
+    else if (!result.healthy) renderServerStatus({ state: "degraded", status: result.status, message: result.message });
+    else renderServerStatus({ state: "online", status: result.status, latencyMs: result.latencyMs });
+  }
+  document.addEventListener("click", (event) => {
+    const button = event.target && event.target.closest && event.target.closest("[data-server-check]");
+    if (button) { button.disabled = true; checkServer().finally(() => { if (button.isConnected) button.disabled = false; }); }
+  });
+  window.addEventListener("fid:api-status", (event) => {
+    const d = event.detail || {};
+    if (d.state === "offline") renderServerStatus({ state: "offline", message: d.message });
+    else if (d.state === "degraded") renderServerStatus({ state: "degraded", status: d.status, message: d.message });
+    else if (d.state === "online") renderServerStatus({ state: "online", status: d.status, latencyMs: d.latencyMs || "—" });
+  });
 
   function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 3200); }
   /* "FOREVYE ID ile giriş" yarıda kaldıysa (önce giriş gerekti) giriş sonrası oraya dön */
@@ -31,7 +70,7 @@
       finally { if (b && document.contains(b)) b.disabled = false; mailCheck(); }
     });
   }
-  const authShell = (inner) => `<div class="auth"><div class="card"><div class="brand" style="margin-bottom:1.1rem"><span class="logo">F</span>FOREVYE ID</div>${inner}</div></div>`;
+  const authShell = (inner) => `<div class="auth"><div class="card"><div class="brand" style="margin-bottom:1.1rem"><span class="logo">F</span>FOREVYE ID</div>${inner}${!C.MOCK && serverState.state === "offline" ? `<p class="hint">Giriş, kayıt ve doğrulama işlemleri için kimlik sunucusu bağlantısı gereklidir. Üstteki bağlantı durumundan tekrar deneyebilirsiniz.</p>` : ""}</div></div>`;
   const pwHint = `<div class="hint">En az ${C.PASSWORD_MIN_LENGTH} karakter, harf ve rakam içermeli.</div>`;
 
   /* ---------------- Kimlik ekranları ---------------- */
@@ -249,24 +288,38 @@
       <div class="row sp app-actions">${open || connect || "<span></span>"}${a.connected ? `<button class="btn dng sm" data-dc="${esc(a.id)}">Bağlantıyı kaldır</button>` : ""}</div></article>`;
   }
   function renderAppsUnavailable(error) {
-    const message = error && error.status >= 500
-      ? "Kimlik hizmeti şu anda yanıt veremiyor. Biraz sonra yeniden deneyin."
-      : "Uygulamalar alınamadı. İnternet bağlantınızı kontrol edip yeniden deneyin.";
+    const attempts = Array.isArray(error && error.attempts) ? error.attempts : [error && error.endpoint].filter(Boolean);
+    const routeText = attempts.length ? attempts.map((x) => `<code>${esc(x)}</code>`).join("<br>") : `<code>${esc(C.API_BASE)}/identity/apps</code>`;
+    const status = error && error.status ? `HTTP ${error.status}` : (error && error.code) || "NETWORK";
     layout("/uygulamalar", `<h1>Uygulamalarım</h1>
-      <p class="mut">FOREVYE hesabınıza bağlı uygulamalar.</p>
+      <p class="mut">Bağlı uygulamalarını, izinlerini ve uygulama erişimlerini buradan yönetebilirsin.</p>
       <section class="card wide app-load-error" role="alert" aria-live="assertive">
         <div class="app-load-error-mark" aria-hidden="true">!</div>
         <div class="app-load-error-body">
-          <h2>Uygulamalar şu anda açılamıyor</h2>
-          <p>${esc(message)}</p>
+          <span class="badge warn">${esc(status)}</span>
+          <h2>Uygulama listesi yüklenemedi</h2>
+          <p>${esc((error && error.message) || "Kimlik sunucusundan uygulama listesi alınamadı.")}</p>
+          <div class="app-diagnostics">
+            <div><span class="mut sm">Kimlik API adresi</span><code>${esc(C.API_BASE || "tanımlı değil")}</code></div>
+            <div><span class="mut sm">Denetlenen uygulama uçları</span>${routeText}</div>
+            <div><span class="mut sm">Hata kodu</span><code>${esc((error && error.code) || "UNKNOWN")}</code></div>
+          </div>
           <div class="row app-error-actions">
             <button class="btn pri" id="apps-retry" type="button">Yeniden dene</button>
+            <button class="btn" id="apps-copy" type="button">Tanı bilgisini kopyala</button>
             <a class="btn" href="#/profil">Profile dön</a>
           </div>
+          <p class="hint">Bu ekran uygulama verisi uydurmaz veya sahte bağlantı durumu göstermez. Sunucu yanıt verdiğinde liste otomatik olarak gerçek hesabından yüklenir.</p>
         </div>
       </section>`);
     const retry = $("#apps-retry");
     if (retry) retry.onclick = () => { retry.disabled = true; vApps().finally(() => { if (retry.isConnected) retry.disabled = false; }); };
+    const copy = $("#apps-copy");
+    if (copy) copy.onclick = async () => {
+      const report = ["FOREVYE ID uygulamalar tanısı", "API: " + (C.API_BASE || "tanımlı değil"), "Kod: " + ((error && error.code) || "UNKNOWN"), "HTTP: " + ((error && error.status) || "—"), "Mesaj: " + ((error && error.message) || "—"), "Uçlar: " + attempts.join(" | ")].join("\n");
+      try { await navigator.clipboard.writeText(report); toast("Tanı bilgisi kopyalandı."); }
+      catch (e) { toast("Kopyalanamadı; ekrandaki hata kodunu paylaşabilirsin."); }
+    };
   }
   async function vApps() {
     layout("/uygulamalar", `<h1>Uygulamalarım</h1><p class="mut">Bağlı uygulamalarını, izinlerini ve uygulama erişimlerini buradan yönetebilirsin.</p><div class="card wide app-loading" role="status"><span class="app-loading-dot"></span> Uygulama listesi sunucudan yükleniyor…</div>`);
@@ -305,6 +358,12 @@
     let info;
     try { info = await api.authorizeInfo({ app: b.app, redirect: b.redirect }); }
     catch (e) { if (e.code === "UNAUTHORIZED") sessionStorage.setItem("fid.pending", location.hash); throw e; }
+    // Daha önce izin verilmiş uygulamalarda oturum açıksa tekrar onay ekranı gösterme.
+    if (info.connected) {
+      const granted = await api.authorize(b);
+      location.replace(granted.redirect);
+      return;
+    }
     app(authShell(`<h1>${esc(info.app.name)} erişim istiyor</h1><p class="mut"><b>${esc(info.email)}</b> hesabınla giriş yapılacak. Parolan uygulamaya verilmez.</p>
       <div class="row" style="margin:.6rem 0">${info.app.scopes.map((s) => `<span class="badge">${esc(scopeText(s))}</span>`).join("")}</div>
       <div class="err"></div><button class="btn pri block" id="ok">İzin ver ve devam et</button><button class="btn block" id="no" style="margin-top:.6rem">Vazgeç</button>
@@ -372,5 +431,6 @@
     demoBox(); mailCheck();
   }
   window.addEventListener("hashchange", route);
+  if (!C.MOCK) checkServer();
   route();
 })();
