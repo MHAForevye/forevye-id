@@ -18,7 +18,6 @@ function makeApi(fetchImpl) {
       MOCK: false,
       API_BASE: 'https://mikroklimakontrolmerkezi.forevye.workers.dev',
       API_TIMEOUT_MS: 2000,
-      HEALTH_TIMEOUT_MS: 1000,
       PASSWORD_MIN_LENGTH: 10,
     },
     location: { origin: 'https://mhaforevye.github.io' },
@@ -98,4 +97,39 @@ test('401 yanıtı oturumu sona ermiş olarak tanımlar, yanlış endpoint yede�
 test('ağ hatasında doğru Identity endpoint bilgisi korunur', async () => {
   const api = makeApi(async () => { throw new TypeError('Failed to fetch'); });
   await assert.rejects(api.apps({}), (error) => error.code === 'NETWORK' && error.endpoint.endsWith('/identity/apps'));
+});
+
+
+test('FOREVYE ID izin ekranı sanal-banka için yetki bilgisini ve PKCE onayını gerçek uçlara yollar', async () => {
+  const calls = [];
+  const api = makeApi(async (url, init) => {
+    calls.push({ url, init });
+    if (url.endsWith('/identity/authorize/info')) return response(200, { app: { id: 'sanal-banka', name: 'Sanal Banka', scopes: ['openid', 'profile:read'] }, email: 'uye@example.com' });
+    if (url.endsWith('/identity/authorize')) return response(200, { redirect: 'https://forevye-nexus.forevyenexus.workers.dev/api/auth/id/callback?code=abc&state=xyz' });
+    return response(404, { message: 'not found' });
+  });
+  const info = await api.authorizeInfo({ app: 'sanal-banka', redirect: 'https://forevye-nexus.forevyenexus.workers.dev/api/auth/id/callback' });
+  assert.equal(info.app.id, 'sanal-banka');
+  const grant = await api.authorize({ app: 'sanal-banka', redirect: 'https://forevye-nexus.forevyenexus.workers.dev/api/auth/id/callback', state: 'state-value', challenge: 'pkce-challenge-value' });
+  assert.match(grant.redirect, /\/api\/auth\/id\/callback/);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[0].url.endsWith('/identity/authorize/info'));
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer test-access');
+  assert.ok(calls[1].url.endsWith('/identity/authorize'));
+  assert.deepEqual(JSON.parse(calls[1].init.body), { app: 'sanal-banka', redirect: 'https://forevye-nexus.forevyenexus.workers.dev/api/auth/id/callback', state: 'state-value', challenge: 'pkce-challenge-value' });
+});
+
+test('FOREVYE ID canlı sayfası lambayı yükler; deneme bağlantısı arayüzü içermez', async () => {
+  const fs = await import('node:fs');
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const app = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
+  const lamp = fs.readFileSync(new URL('../lamp.js', import.meta.url), 'utf8');
+  assert.match(html, /<script src="lamp\.js"><\/script>/);
+  assert.match(css, /\.lamp-stage\{/);
+  assert.match(lamp, /pointerdown/);
+  assert.match(lamp, /pointermove/);
+  assert.match(lamp, /ArrowLeft/);
+  assert.doesNotMatch(html + app + css, /Bağlantıyı sına|data-server-check|connection-status/);
+  assert.doesNotMatch(lamp, /Işığı kapat|lampSwitch|lbLevel/);
 });

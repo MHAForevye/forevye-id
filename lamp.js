@@ -1,99 +1,117 @@
-/* FOREVYE ID — etkileşimli masa lambası
- * Yalnızca arayüz tercihlerini (açı, parlaklık, açık/kapalı) localStorage'a yazar; kimlik/güvenlik verisi YAZMAZ.
- * Başlık sürüklenebilir (fare/dokunmatik) ve klavye ile (←/→) döndürülebilir. Otomatik salınım ~40 sn, düşük genlikli;
- * prefers-reduced-motion veya sekme arka plandayken durur. */
+/* FOREVYE ID — sabit sıcak ışıklı, sürüklenebilir mimari masa lambası.
+ * Işık daima açıktır ve parlaklığı değişmez. Yalnızca başlık yönü saklanır. */
 (function () {
-  const KEY = "fid_ui_lamp", MIN = -32, MAX = 28, DEF = { on: true, level: 1, angle: -6 };
-  const LEVELS = [{ n: "Loş", v: 0.55 }, { n: "Orta", v: 0.85 }, { n: "Aydınlık", v: 1.15 }];
-  const root = document.documentElement;
-  const mq = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
-  let st = Object.assign({}, DEF);
-  try { const p = JSON.parse(localStorage.getItem(KEY)); if (p && typeof p === "object") st = { on: p.on !== false, level: [0, 1, 2].includes(p.level) ? p.level : DEF.level, angle: Math.max(MIN, Math.min(MAX, +p.angle || DEF.angle)) }; } catch (e) {}
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} };
-  const clamp = (a) => Math.max(MIN, Math.min(MAX, a));
+  "use strict";
+  const KEY = "fid_ui_lamp_angle_v1";
+  const MIN = -34, MAX = 30, DEFAULT_ANGLE = -4;
+  const clamp = (n) => Math.max(MIN, Math.min(MAX, n));
+  let angle = DEFAULT_ANGLE;
+  try {
+    const stored = Number(localStorage.getItem(KEY));
+    if (Number.isFinite(stored) && localStorage.getItem(KEY) !== null) angle = clamp(stored);
+  } catch (_) { /* storage is optional */ }
 
   const stage = document.createElement("div");
-  stage.className = "lamp-stage"; stage.setAttribute("aria-hidden", "false");
+  stage.className = "lamp-stage";
   stage.innerHTML = `
-  <svg class="lamp" viewBox="0 0 260 640" role="group" aria-label="Masa lambası">
-    <defs><linearGradient id="coneG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4d69a" stop-opacity=".30"/><stop offset="1" stop-color="#f4d69a" stop-opacity="0"/></linearGradient></defs>
-    <ellipse cx="130" cy="616" rx="96" ry="9" fill="#000" opacity=".45"/>
-    <rect x="30" y="604" width="200" height="6" rx="3" fill="#1d1a14"/>
-    <path d="M76 604 q0-22 54-22 q54 0 54 22z" fill="#141310" stroke="#2a251b"/>
-    <g stroke="#1a1813" stroke-width="9" stroke-linecap="round" fill="none"><path d="M130 584 L84 392"/><path d="M84 392 L168 214"/></g>
-    <g stroke="#2d281d" stroke-width="2" stroke-linecap="round" fill="none"><path d="M130 584 L84 392"/><path d="M84 392 L168 214"/></g>
-    <circle cx="130" cy="584" r="8" fill="#201d16" stroke="#3a3324"/><circle cx="84" cy="392" r="8" fill="#201d16" stroke="#3a3324"/>
-    <g class="lamp-head" id="lampHead" tabindex="0" role="slider" aria-label="Lamba başlığının açısı" aria-valuemin="${MIN}" aria-valuemax="${MAX}" style="transform-origin:168px 214px">
-      <polygon class="lamp-cone" points="150,262 40,640 -80,640 -10,262" transform="translate(-6 0)"/>
-      <circle cx="168" cy="214" r="9" fill="#201d16" stroke="#3a3324"/>
-      <path d="M168 214 L120 238" stroke="#1a1813" stroke-width="8" stroke-linecap="round"/>
-      <path class="lamp-shade" d="M92 232 Q112 196 150 236 L134 276 Q108 286 86 270 Z" fill="#181610" stroke="#3a3324"/>
-      <ellipse class="lamp-bulb" cx="108" cy="276" rx="22" ry="7"/>
-    </g>
-    <g class="lamp-switch" id="lampSwitch" tabindex="0" role="switch" aria-label="Masa lambası ışığı">
-      <rect x="112" y="590" width="36" height="14" rx="7" fill="#12110e" stroke="#3a3324"/><circle class="knob" cx="122" cy="597" r="5"/>
-    </g>
-  </svg>`;
-  const bar = document.createElement("div");
-  bar.className = "lamp-bar";
-  bar.innerHTML = `<button type="button" class="btn sm" id="lbOn" aria-pressed="true"></button>
-    <label class="sr" for="lbLevel">Lamba parlaklığı</label>
-    <select id="lbLevel">${LEVELS.map((l, i) => `<option value="${i}">${l.n}</option>`).join("")}</select>
-    <button type="button" class="btn sm" id="lbReset">Varsayılan</button>`;
-  document.body.prepend(stage); document.body.appendChild(bar);
+    <svg class="lamp" viewBox="0 0 300 660" role="img" aria-label="Sabit sıcak sarı ışıklı masa lambası">
+      <defs>
+        <linearGradient id="lampMetal" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#39352d"/><stop offset=".22" stop-color="#96815c"/>
+          <stop offset=".48" stop-color="#292720"/><stop offset=".72" stop-color="#b69a68"/><stop offset="1" stop-color="#302d25"/>
+        </linearGradient>
+        <linearGradient id="lampShade" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#4b4537"/><stop offset=".38" stop-color="#24221c"/>
+          <stop offset="1" stop-color="#11120f"/>
+        </linearGradient>
+        <linearGradient id="lampBeam" x1="0" y1="0" x2=".1" y2="1">
+          <stop offset="0" stop-color="#ffd47a" stop-opacity=".30"/>
+          <stop offset=".42" stop-color="#ffc45c" stop-opacity=".11"/>
+          <stop offset="1" stop-color="#ffc45c" stop-opacity="0"/>
+        </linearGradient>
+        <radialGradient id="lampGlow">
+          <stop offset="0" stop-color="#ffe7ad" stop-opacity=".28"/><stop offset="1" stop-color="#f9bd58" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <g class="lamp-beam-layer" id="lampBeamLayer" aria-hidden="true">
+        <path class="lamp-beam" fill="url(#lampBeam)" d="M82 270 L-78 652 L238 652 L132 270Z"/>
+        <ellipse cx="107" cy="336" rx="126" ry="160" fill="url(#lampGlow)"/>
+      </g>
+      <ellipse cx="132" cy="632" rx="110" ry="13" fill="#000" opacity=".55"/>
+      <ellipse cx="132" cy="620" rx="102" ry="18" fill="#171713" stroke="#62543a" stroke-width="2"/>
+      <ellipse cx="132" cy="615" rx="83" ry="9" fill="url(#lampMetal)" opacity=".95"/>
+      <path d="M95 612 Q94 589 132 585 Q170 589 169 612Z" fill="#24231e" stroke="#81704c" stroke-width="1.6"/>
+      <path d="M132 590 L87 406 L174 226" fill="none" class="lamp-metal" stroke="url(#lampMetal)" stroke-width="13"/>
+      <path d="M132 590 L87 406 L174 226" fill="none" stroke="#c6aa74" stroke-opacity=".32" stroke-width="2.1"/>
+      <path d="M130 583 L89 410" stroke="#11120f" stroke-width="3" opacity=".85"/>
+      <path d="M91 399 Q110 385 124 401" fill="none" stroke="#95805a" stroke-width="4" stroke-linecap="round"/>
+      <circle class="lamp-joint" cx="132" cy="590" r="10" fill="#29251d" stroke="#88704a" stroke-width="2"/>
+      <circle class="lamp-joint" cx="87" cy="406" r="10" fill="#29251d" stroke="#88704a" stroke-width="2"/>
+      <g class="lamp-head" id="lampHead" tabindex="0" role="slider" aria-label="Lamba başlığını sürükleyerek veya ok tuşlarıyla yönlendir" aria-valuemin="${MIN}" aria-valuemax="${MAX}" aria-valuenow="${Math.round(angle)}">
+        <path d="M174 226 L132 247" fill="none" stroke="url(#lampMetal)" stroke-width="12" stroke-linecap="round"/>
+        <path d="M174 226 L132 247" fill="none" stroke="#cfb17a" stroke-opacity=".38" stroke-width="2" stroke-linecap="round"/>
+        <path class="lamp-shade" d="M88 239 Q115 194 159 226 L139 282 Q109 294 76 267Z" fill="url(#lampShade)" stroke="#8c764e" stroke-width="2"/>
+        <path d="M88 239 Q115 194 159 226" fill="none" stroke="#b79a65" stroke-width="2.5"/>
+        <path class="lamp-grip" d="M76 267 Q109 294 139 282" fill="none" stroke="#d8b66f" stroke-width="8" stroke-linecap="round"/>
+        <ellipse class="lamp-bulb" cx="108" cy="278" rx="19" ry="7" fill="#ffe8ad"/>
+        <path d="M88 281 Q107 290 128 282" fill="none" stroke="#ffe1a0" stroke-width="2" opacity=".9"/>
+        <circle cx="174" cy="226" r="10" fill="#29251d" stroke="#b99b64" stroke-width="2"/>
+        <circle cx="174" cy="226" r="3" fill="#e1c184"/>
+      </g>
+      <path d="M82 620 Q132 637 182 620" fill="none" stroke="#b49a6b" stroke-opacity=".38" stroke-width="1.5"/>
+    </svg>`;
+  document.body.appendChild(stage);
 
-  const head = stage.querySelector("#lampHead"), sw = stage.querySelector("#lampSwitch");
-  let sway = 0, dragging = false;
+  const svg = stage.querySelector("svg");
+  const head = stage.querySelector("#lampHead");
+  const beamLayer = stage.querySelector("#lampBeamLayer");
+  let drag = null;
+  function save() { try { localStorage.setItem(KEY, String(angle)); } catch (_) {} }
   function paint() {
-    const a = clamp(st.angle + sway);
-    head.style.transform = "rotate(" + a.toFixed(2) + "deg)";
-    head.setAttribute("aria-valuenow", Math.round(st.angle));
-    root.style.setProperty("--lamp-x", (82 - a * 0.55).toFixed(1) + "%");
-    root.style.setProperty("--lamp-b", LEVELS[st.level].v);
-    root.classList.toggle("lamp-off", !st.on);
-    sw.setAttribute("aria-checked", st.on); bar.querySelector("#lbOn").textContent = st.on ? "Işığı kapat" : "Işığı aç";
-    bar.querySelector("#lbOn").setAttribute("aria-pressed", st.on); bar.querySelector("#lbLevel").value = st.level;
+    const rotation = `rotate(${angle.toFixed(2)}deg)`;
+    head.style.transform = rotation;
+    beamLayer.style.transform = rotation;
+    head.setAttribute("aria-valuenow", String(Math.round(angle)));
   }
-  const set = (p) => { Object.assign(st, p); st.angle = clamp(st.angle); save(); paint(); };
-
-  /* sürükleme: işaretçinin pivota göre açısı */
-  head.addEventListener("pointerdown", (e) => { dragging = true; head.setPointerCapture(e.pointerId); head.classList.add("grab"); e.preventDefault(); });
-  head.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
-    const r = head.ownerSVGElement.getBoundingClientRect(), k = r.width / 260;
-    const dx = e.clientX - (r.left + 168 * k), dy = e.clientY - (r.top + 214 * k);
-    /* başlık pivottan sola-aşağıya (~37°) bakar; işaretçi daha aşağıdaysa saat yönünün tersine (negatif) döner */
-    const ang = 37 - Math.atan2(dy, -dx) * 180 / Math.PI;
-    st.angle = clamp(ang); paint();
+  function toSvgPoint(event) {
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * 300 / rect.width,
+      y: (event.clientY - rect.top) * 660 / rect.height
+    };
+  }
+  function pointerAngle(point) { return Math.atan2(point.y - 226, point.x - 174) * 180 / Math.PI; }
+  function normalizeDelta(value) {
+    while (value > 180) value -= 360;
+    while (value < -180) value += 360;
+    return value;
+  }
+  head.addEventListener("pointerdown", (event) => {
+    const point = toSvgPoint(event);
+    drag = { pointerId: event.pointerId, startAngle: angle, startPointerAngle: pointerAngle(point) };
+    try { head.setPointerCapture(event.pointerId); } catch (_) {}
+    head.classList.add("grab");
+    event.preventDefault();
   });
-  const end = () => { if (dragging) { dragging = false; head.classList.remove("grab"); save(); } };
-  head.addEventListener("pointerup", end); head.addEventListener("pointercancel", end);
-  head.addEventListener("keydown", (e) => {
-    const d = e.shiftKey ? 8 : 3;
-    if (e.key === "ArrowLeft" || e.key === "ArrowDown") { set({ angle: st.angle - d }); e.preventDefault(); }
-    else if (e.key === "ArrowRight" || e.key === "ArrowUp") { set({ angle: st.angle + d }); e.preventDefault(); }
+  head.addEventListener("pointermove", (event) => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const delta = normalizeDelta(pointerAngle(toSvgPoint(event)) - drag.startPointerAngle);
+    angle = clamp(drag.startAngle + delta);
+    paint();
   });
-  const toggle = () => set({ on: !st.on });
-  sw.addEventListener("click", toggle);
-  sw.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") { toggle(); e.preventDefault(); } });
-  bar.querySelector("#lbOn").onclick = toggle;
-  bar.querySelector("#lbLevel").onchange = (e) => set({ level: +e.target.value });
-  bar.querySelector("#lbReset").onclick = () => set(Object.assign({}, DEF));
-
-  /* yavaş salınım: ~40 sn, ±3°, sadece başlık; ~30 fps */
-  let raf = 0, last = 0;
-  function tick(t) {
-    raf = requestAnimationFrame(tick);
-    if (t - last < 33) return; last = t;
-    if (dragging || !st.on) return;
-    sway = Math.sin((t / 40000) * 2 * Math.PI) * 3; paint();
+  function endDrag(event) {
+    if (!drag || (event && drag.pointerId !== event.pointerId)) return;
+    drag = null; head.classList.remove("grab"); save();
   }
-  function run() {
-    cancelAnimationFrame(raf); raf = 0;
-    if (mq.matches || document.hidden) { sway = 0; paint(); return; }
-    raf = requestAnimationFrame(tick);
-  }
-  document.addEventListener("visibilitychange", run);
-  (mq.addEventListener ? mq.addEventListener("change", run) : mq.addListener && mq.addListener(run));
-  paint(); run();
+  head.addEventListener("pointerup", endDrag);
+  head.addEventListener("pointercancel", endDrag);
+  head.addEventListener("lostpointercapture", endDrag);
+  head.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 8 : 3;
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") angle = clamp(angle - step);
+    else if (event.key === "ArrowRight" || event.key === "ArrowUp") angle = clamp(angle + step);
+    else return;
+    paint(); save(); event.preventDefault();
+  });
+  paint();
 })();

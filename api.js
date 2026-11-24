@@ -178,7 +178,6 @@
   }
 
   const mock = {
-    async health() { return { reachable: true, healthy: true, mode: "mock", status: 200, latencyMs: 0 }; },
     async register({ email, password }) {
       const db = loadDb(); email = (email || "").trim().toLowerCase();
       if (!EMAIL_RE.test(email)) throw new ApiError("Geçerli bir e-posta adresi girin.", "VALIDATION");
@@ -357,9 +356,6 @@
     if (!/^https:\/\//i.test(raw)) throw new ApiError("API_BASE geçerli bir HTTPS adresi olmalı. config.js dosyasını kontrol edin.", "CONFIG");
     return raw;
   }
-  function emitApiStatus(detail) {
-    try { window.dispatchEvent(new CustomEvent("fid:api-status", { detail })); } catch (e) {}
-  }
   function saveTokens(value) {
     if (!value || typeof value.accessToken !== "string" || !value.accessToken) {
       throw new ApiError("Sunucu oturum anahtarı döndürmedi. API yanıt sözleşmesini kontrol edin.", "BAD_RESPONSE");
@@ -380,12 +376,10 @@
     } catch (e) {
       if (controller.signal.aborted || (e && e.name === "AbortError")) {
         const err = new ApiError("Sunucu isteği zaman aşımına uğradı (" + Math.round(timeoutMs / 1000) + " sn). Worker yanıt vermiyor olabilir.", "TIMEOUT");
-        emitApiStatus({ state: "offline", message: err.message, code: err.code });
         throw err;
       }
       const origin = (window.location && window.location.origin) || "bu site";
       const err = new ApiError("Sunucu isteği tamamlanamadı. Worker kapalı/yanlış adresli olabilir veya CORS, " + origin + " kaynağına izin vermiyor. API_BASE: " + String(C.API_BASE || "tanımsız"), "NETWORK", null, e);
-      emitApiStatus({ state: "offline", message: err.message, code: err.code });
       throw err;
     } finally { clearTimeout(timer); }
   }
@@ -450,44 +444,9 @@
     if (!res.ok) {
       const err = responseError(res, data);
       err.endpoint = base + path;
-      if (res.status >= 500) emitApiStatus({ state: "degraded", message: err.message, status: res.status });
       throw err;
     }
-    emitApiStatus({ state: "online", status: res.status });
     return data;
-  }
-  async function checkServer() {
-    const started = Date.now();
-    let endpoint = String(C.API_BASE || "");
-    const probePath = "/identity/profile";
-    try {
-      endpoint = apiBase();
-      // Kök sayfa yerine gerçek kimlik API'sini yokla. Oturumsuz 401/403,
-      // API rotasının ve CORS'un yanıt verdiğini gösterir; giriş hatası değildir.
-      const res = await timedFetch(endpoint + probePath, {
-        method: "GET",
-        headers: { Accept: "application/json" }
-      }, C.HEALTH_TIMEOUT_MS || 8000);
-      const data = await readResponse(res);
-      const routeMissing = res.status === 404 || res.status === 405;
-      const healthy = res.status < 500 && !routeMissing;
-      let message = "";
-      if (res.status === 401 || res.status === 403) message = "Kimlik API'si yanıt veriyor; profil için oturum gerekiyor (bu kontrol için normal).";
-      else if (res.status === 404) message = probePath + " rotası bulunamadı. Yanlış Worker dağıtımı veya eksik Identity rotaları.";
-      else if (res.status === 405) message = probePath + " GET isteğini kabul etmedi. Worker rotasını kontrol edin.";
-      else if (res.status >= 500) message = (data && data.message) || "Kimlik Worker'ı sunucu hatası döndürdü (HTTP " + res.status + ").";
-      const result = {
-        reachable: true, healthy, status: res.status, message,
-        authRequired: res.status === 401 || res.status === 403,
-        latencyMs: Date.now() - started, endpoint, probePath
-      };
-      emitApiStatus({ state: healthy ? "online" : "degraded", status: res.status, message, latencyMs: result.latencyMs });
-      return result;
-    } catch (e) {
-      const result = { reachable: false, healthy: false, code: e.code || "NETWORK", message: e.message, latencyMs: Date.now() - started, endpoint, probePath, origin: (window.location && window.location.origin) || "" };
-      emitApiStatus({ state: "offline", message: result.message, code: result.code });
-      return result;
-    }
   }
   function loadGis() {
     return new Promise((res, rej) => {
@@ -503,7 +462,6 @@
     return { items, total: r.total != null ? r.total : items.length, page: r.page || 1, pageSize: r.pageSize || items.length || 12, categories: r.categories || [...new Set(items.map((a) => a.category))].sort() };
   }
   const real = {
-    health: checkServer,
     register: (b) => http("/identity/register", { method: "POST", body: b, auth: false }),
     verifyEmail: (b) => http("/identity/email/verify", { method: "POST", body: b, auth: false }),
     resendVerification: (b) => http("/identity/email/resend", { method: "POST", body: b, auth: false }),

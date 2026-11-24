@@ -40,7 +40,7 @@ export default {
 
 1. `ID_ORIGIN` Cloudflare Worker Variables'ta `https://mhaforevye.github.io` olmalı.
 2. Worker'ı gerçek kaynak deposundan deploy et.
-3. Tarayıcıda FOREVYE ID üstündeki **Bağlantıyı sına** düğmesine bas. `/identity/profile` için HTTP `401` dönmesi bağlantının ve CORS'un çalıştığını gösterir; giriş yapılmadığı için bu beklenen yanıttır.
-4. Giriş isteği başarısız olursa DevTools → Network'te `OPTIONS /identity/login` ve hemen ardından `POST /identity/login` isteklerini kontrol et.
+3. FOREVYE ID'de gerçek bir giriş veya kayıt işlemi başlat. Tarayıcı DevTools → Network'te ilgili `/identity/*` isteğinin sonucunu ve CORS başlıklarını kontrol et.
+4. Bankadan giriş için `sanal-banka` uygulama onay ekranını aç; izin sonrası bankanın callback adresine dönüldüğünü doğrula.
 
-> Bu paket CORS middleware modülünü ve istemci tanılamasını içerir. Worker'ın asıl kimlik doğrulama rotaları, D1 şeması ve deploy dosyası gönderilen arşivde bulunmadığından canlı Worker bu paketten tek başına yayınlanamaz.
+> Bu depo CORS middleware modülünü ve entegrasyon yönergesini içerir. Worker'ın asıl kimlik doğrulama rotaları, D1 şeması ve deploy dosyası burada bulunmadığından canlı Worker bu repodan tek başına yayımlanamaz.

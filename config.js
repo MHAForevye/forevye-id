@@ -11,7 +11,6 @@ window.FOREVYE_CONFIG = {
   MOCK: false,
   API_BASE: "https://mikroklimakontrolmerkezi.forevye.workers.dev",   // Kimlik API Worker adresi; HTTPS, sonunda "/" olmamalı
   API_TIMEOUT_MS: 12000,                 // İstek başına üst sınır; takılı kalan istekler arayüzü kilitlemez
-  HEALTH_TIMEOUT_MS: 8000,               // Bağlantı kontrolü zaman aşımı
   GOOGLE_CLIENT_ID: "",                   // Google ile giriş için (MOCK:false iken)
   PASSWORD_MIN_LENGTH: 10,                // şartnamede belirtilmedi; öneri değeri
   PHOTO_MAX_BYTES: 1900000,               // şartname 2 MB; sunucu (D1 satır sınırı) 1,9 MB'a kadar kabul eder. İstemci fotoğrafı zaten küçültüp kırpar

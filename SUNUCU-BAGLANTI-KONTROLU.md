@@ -1,60 +1,36 @@
-# FOREVYE ID — Canlı sunucu bağlantı kontrolü
+# FOREVYE ID — Sunucu bağlantısı ve yayın kontrolü
 
-Bu ZIP'in içindeki `forevye-id-main` projesi statik web istemcisidir. Gerçek kimlik API'si `config.js` içindeki `API_BASE` adresinde çalışan Cloudflare Worker'dır. Bu arşivde Worker kaynak kodu, `wrangler.toml`, D1 migration/şeması veya Cloudflare hesabına erişim bulunmadığından canlı Worker'ı bu projeden deploy etmek mümkün değildir.
+Bu proje GitHub Pages üzerinde çalışan statik ön yüzdür. Kimlik işlemleri `config.js` içindeki `API_BASE` adresindeki Cloudflare Worker üzerinden yürür. Bu repoda Identity Worker'ın tam kaynak kodu veya D1 migration dosyaları yoktur.
 
-## 1. Ön yüzden kontrol
+## Üretim ayarları
 
-1. `config.js` içinde `MOCK: false` olmalı.
-2. `API_BASE` değeri, FOREVYE ID uçlarını gerçekten sunan Worker'ın tam HTTPS adresi olmalı; sondaki `/` kullanılmamalı.
-3. Siteyi HTTPS üzerinden açın.
-4. Sayfanın üstündeki **Kimlik sunucusu** durumu Worker ana adresine istek yapar. `HTTP 404` bile alan adının cevap verdiğini gösterir; `/identity/*` API uçlarının doğru olduğu anlamına gelmez.
-5. Giriş veya kayıt sırasında `NETWORK` görünüyorsa Worker URL'si, DNS ve CORS; `TIMEOUT` görünüyorsa Worker günlükleri ve bağlı hizmetler incelenmelidir.
+- `MOCK: false` olmalı.
+- `API_BASE`, `/identity/*` uçlarını sunan HTTPS Worker adresi olmalı; sonunda `/` bulunmamalı.
+- Worker CORS allowlist'inde `https://mhaforevye.github.io` origin'i bulunmalı.
+- `OPTIONS` preflight, `GET, POST, PATCH, DELETE, OPTIONS` yöntemleri ve `Authorization, Content-Type` başlıkları desteklenmeli. Başarılı ve hatalı yanıtların tümünde CORS başlıkları bulunmalı.
+- D1 binding ve Identity şeması gerçek Identity Worker'ın kullandığı veritabanında hazır olmalı. E-posta doğrulaması etkinse e-posta sağlayıcısının secret/variable ayarları da Worker tarafında tanımlanmalı.
 
-## 2. Cloudflare Worker kontrolü
+## Banka entegrasyonu
 
-Cloudflare Dashboard → Workers & Pages bölümünde `API_BASE` ile aynı Worker'ın bulunduğunu ve en son dağıtımın başarılı olduğunu doğrulayın. Worker adı veya `workers.dev` alt alan adı değiştiyse `config.js` güncellenmelidir.
+Nexus Banka Worker'ında: `ID_URL=https://mhaforevye.github.io/forevye-id` ve `ID_API_URL=https://mikroklimakontrolmerkezi.forevye.workers.dev` olmalıdır. Banka `sanal-banka` uygulama kimliği ile `/#/baglan` sayfasını açar; ID izin ekranından sonra callback'e tek kullanımlık kod döner ve banka bu kodu sunucudan sunucuya token exchange ile doğrular.
 
-Worker'ın CORS yanıtı en azından şu kuralları uygulamalıdır:
+Nexus tarafındaki `migrations/0003_forevye_id.sql` migration'ı bankanın kendi D1 veritabanına uygulanmış olmalıdır. Bu migration `id_states`, `id_links` ve `id_pending` tablolarını sağlar.
 
-- `Access-Control-Allow-Origin`: yayınlanan FOREVYE ID sitesinin tam origin'i. Origin, protokol + alan adı + varsa porttur; sayfa yolu içermez.
-- `Access-Control-Allow-Methods`: `GET, POST, PATCH, DELETE, OPTIONS`
-- `Access-Control-Allow-Headers`: `Authorization, Content-Type`
-- `OPTIONS` preflight isteğine gerçek API mantığına girmeden başarılı yanıt.
-- CORS başlıkları başarı ve hata yanıtlarının tamamında bulunmalı; varsa `Vary: Origin` kullanılmalı.
+## Gerçek akışla doğrulama
 
-`Authorization` başlığı kullanıldığı için yalnızca normal GET yanıtına CORS eklemek yetmez; `OPTIONS` da doğru yanıtlanmalıdır. Üretimde `*` yerine yalnızca gerçekten kullanılan origin'leri allowlist'e ekleyin.
+1. FOREVYE ID'de kayıt veya giriş yapın; e-posta doğrulaması ve varsa 2FA tamamlanmalı.
+2. Oturum açtıktan sonra Profil ve Uygulamalarım sayfalarının gerçek hesap bilgileriyle yüklendiğini kontrol edin.
+3. Nexus Banka'da FOREVYE ID ile giriş başlatın.
+4. ID tarafında `sanal-banka` uygulama adını ve izin kapsamlarını görün; izin verin.
+5. Bankanın callback adresine döndüğünü ve banka oturumunun açıldığını doğrulayın. Aynı doğrulanmış e-posta ile eski banka hesabı varsa hesap birleştirme akışı uygulanır; aksi durumda banka ilk kurulum adımına yönlendirir.
 
-## 3. Identity Worker yapılandırması
+Sunucu durumu arayüzde ayrı bir panel olarak gösterilmez; bağlantı gerçek kullanıcı işlemleri sırasında kurulur. Bir hata oluşursa tarayıcı DevTools → Network üzerinden ilgili `/identity/*` isteğinin HTTP yanıtı, `OPTIONS` preflight sonucu ve CORS başlıkları incelenebilir.
 
-Önceki proje notlarında Identity servisinin Mikro-Klima Worker'ında çalıştığı belirtilmişti. Bu Worker kaynak kodu bu teslimde yoktur; dolayısıyla aşağıdakiler o projenin/Cloudflare ayarlarının içinde doğrulanmalıdır:
+## Hata ayrımı
 
-- `ID_ORIGIN` / CORS izin listesi, FOREVYE ID'nin gerçek yayın origin'ini göstermeli.
-- E-posta doğrulaması kullanılıyorsa `RESEND_API_KEY` ve `EMAIL_FROM` secret/variable değerleri geçerli olmalı.
-- Worker'ın kullandığı D1 veritabanı binding'i doğru veritabanına bağlı olmalı ve Identity şeması uygulanmış olmalı.
-- Worker loglarında `500` veya D1 tablo/kolon hataları bulunmamalı.
+- `NETWORK`: Worker'a erişim, DNS veya CORS sorunu olabilir.
+- `TIMEOUT`: Worker yanıt vermemiştir; Cloudflare günlükleri ve bağımlı servisler incelenmelidir.
+- `HTTP_404`: İstenen `/identity/*` rotası Worker'da bulunmuyor veya yanlış API adresi kullanılıyor olabilir.
+- `HTTP_5xx`: Worker veya D1 tarafında sunucu hatası olabilir.
 
-## 4. Nexus uygulamasıyla bağlantı
-
-Nexus Banka Worker'ında `ID_URL` FOREVYE ID web arayüzünü, `ID_API_URL` ise aynı Identity API Worker adresini göstermelidir. Bu iki değer farklı görevler içindir. Nexus callback'i sunucudan sunucuya `/identity/token/exchange` çağrısı yapar; tarayıcı CORS ayarı bu server-to-server çağrının yerini tutmaz.
-
-## 5. Hızlı uç kontrolü
-
-- `GET {API_BASE}/` cevap veriyorsa Worker adresi erişilebilirdir; kök rotanın `404` dönmesi tek başına sorun değildir.
-- `GET {API_BASE}/identity/profile` token olmadan `401` veya `403` döndürüyorsa API rotası ve CORS erişilebilir durumdadır; bu, sağlık kontrolünde beklenen bir yanıttır.
-- `404` üzerinde HTML/Cloudflare hata sayfası, yanlış Worker adresi veya eksik route ihtimalini artırır.
-- Tarayıcı konsolunda `blocked by CORS policy` görünüyorsa Worker'ın origin/OPTIONS başlıkları düzeltilmelidir.
-
-**Güvenlik:** Parolaları, API anahtarlarını, refresh token'ları veya kullanıcı verilerini tanılama çıktısına eklemeyin. Bunları ekran görüntüsü ya da herkese açık destek kaydında paylaşmayın.
-
-
-## 2026-11-23 bağlantı yaması
-
-- İstemcinin sağlık kontrolü artık `/` yerine `/identity/profile` yolunu sınar; kök sayfanın CORS/404 davranışı yanlış çevrimdışı uyarısına neden olmaz.
-- Market `wrangler.toml` içindeki `ID_ORIGIN` değeri `https://mhaforevye.github.io` ile eşleşiyor. Ancak bu değişkenin bulunması Worker kodunun CORS başlıklarını otomatik eklediği anlamına gelmez.
-- `/identity/*` için `OPTIONS` ve gerçek yanıt başlıklarını uygulayan middleware: `worker/identity-cors.mjs`. Mevcut Worker dispatcher'ına nasıl bağlanacağı: `MIKRO-KLIMA-WORKER-CORS-ENTEGRASYONU.md`.
-- Mevcut Mikro-Klima Worker kaynak kodu / `worker/index.js` paylaşılmadığından bu middleware burada canlı Worker'a entegre edilip deploy edilmedi.
-
-
-## Uygulamalarım endpoint uyumu
-
-Mikro-Klima'nın gerçek Identity Worker'ında uygulama listesi `GET /identity/apps` rotasındadır. ID ön yüzü `/v1/me/apps` veya `/v1/catalog/apps` çağırmamalıdır. Bu Worker `/v1/*` için CORS preflight rotası sunmadığından, `Authorization` başlıklı tarayıcı isteği `NETWORK` olarak engellenebilir ve istemci tarafındaki HTTP 404/405 fallback kodu çalışmaz. Güncel istemci doğrudan `/identity/apps` çağırır.
+**Canlı doğrulama notu:** Yerel testler gerçek Identity Worker'a bağlanmaz; bu repoda Identity backend kaynak kodu yoktur. Canlı kullanıcı girişi, CORS, D1 ve e-posta sağlayıcısı yalnızca yayımlanmış Worker üzerinde gerçek hesapla doğrulanabilir.
