@@ -119,7 +119,7 @@ test('FOREVYE ID izin ekranı sanal-banka için yetki bilgisini ve PKCE onayın�
   assert.deepEqual(JSON.parse(calls[1].init.body), { app: 'sanal-banka', redirect: 'https://forevye-nexus.forevyenexus.workers.dev/api/auth/id/callback', state: 'state-value', challenge: 'pkce-challenge-value' });
 });
 
-test('FOREVYE ID canlı sayfası lambayı yükler; deneme bağlantısı arayüzü içermez', async () => {
+test('FOREVYE ID canlı sayfası lambayı ve kimlik sunucusu bağlantı durumunu yükler', async () => {
   const fs = await import('node:fs');
   const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   const app = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
@@ -130,6 +130,6 @@ test('FOREVYE ID canlı sayfası lambayı yükler; deneme bağlantısı arayüz�
   assert.match(lamp, /pointerdown/);
   assert.match(lamp, /pointermove/);
   assert.match(lamp, /ArrowLeft/);
-  assert.doesNotMatch(html + app + css, /Bağlantıyı sına|data-server-check|connection-status/);
+  assert.match(html + app + css, /Bağlantıyı sına|data-server-check|connection-status/);
   assert.doesNotMatch(lamp, /Işığı kapat|lampSwitch|lbLevel/);
 });
