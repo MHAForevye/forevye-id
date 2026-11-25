@@ -1,4 +1,11 @@
 /**
+ * !! YEDEK / ESKİ MODÜL — GEREKMEZ !!
+ * Mikro-Klima Worker'ı (MikroKlimaKontrolMerkezi/worker/index.js) CORS'u artık KENDİ İÇİNDE yönetir ve iki GitHub hesabının
+ * origin'lerini (mhaforevye.github.io, frovyes.github.io) koda gömülü tutar (worker/origins.js). Bu modülü Worker'a EKLEMEYİN:
+ * ikinci bir CORS katmanı yalnızca ID_ORIGIN'e baktığı için yanlış yapılandırmada çakışıp erişimi yeniden kapatabilir.
+ * Yalnızca Mikro-Klima dışında, kendi CORS'u olmayan bir Worker'ı FOREVYE ID'ye bağlamak gerekirse kullanın.
+ */
+/**
  * FOREVYE ID CORS middleware for the Mikro-Klima Cloudflare Worker.
  * Import this module in the existing Worker and wrap the existing /identity/*
  * router/dispatcher. Do not replace the Worker's business routes with this file.

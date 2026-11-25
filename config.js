@@ -4,7 +4,10 @@
  *  MOCK: true  → sunucu yok; tarayıcıda (localStorage) çalışan demo arka uç.
  *  MOCK: false → API_BASE adresindeki gerçek Identity Service kullanılır.
  *
- *  Identity Service = Mikro-Klima Worker'ı (/identity/*). Sunucu tarafında: wrangler.toml → ID_ORIGIN bu sitenin adresi olmalı,
+ *  İKİ GITHUB HESABI / İKİ CLOUDFLARE HESABI: bu site mhaforevye.github.io'da yayınlanır; API_BASE ise Mikro-Klima Worker'ının (workers.dev alt alanı: forevye)
+ *  adresidir ve Nexus Worker'ından (forevyenexus) FARKLI bir Cloudflare hesabındadır. Worker, iki GitHub origin'ini KENDİ KODUNDA sabit tutar
+ *  (MikroKlimaKontrolMerkezi/worker/origins.js) — Cloudflare panelindeki değişkenlere bağlı değildir. Doğrulama: Mikro-Klima'da  npm run verify:live
+ * *  Identity Service = Mikro-Klima Worker'ı (/identity/*). Sunucu tarafında: wrangler.toml → ID_ORIGIN bu sitenin adresi olmalı,
  *  gizli değerler RESEND_API_KEY (+ EMAIL_FROM) ayarlanmalı, schema.sql D1'e uygulanmalı. Bkz. mikro-klima/BAGLANTI-FOREVYE.md
  */
 window.FOREVYE_CONFIG = {

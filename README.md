@@ -25,7 +25,7 @@ Arayüzde kalıcı sunucu durumu, bağlantı sınama düğmesi veya teknik tanı
 
 ## Worker ve CORS
 
-Identity API Worker `API_BASE` adresinde çalışmalıdır. CORS allowlist'e GitHub Pages origin'i `https://mhaforevye.github.io` eklenmeli; `OPTIONS` istekleri, `GET, POST, PATCH, DELETE, OPTIONS` yöntemleri ve `Authorization, Content-Type` başlıkları desteklenmelidir. CORS başlıkları başarılı yanıtların yanında hata yanıtlarında da bulunmalıdır. Ayrıntılar `MIKRO-KLIMA-WORKER-CORS-ENTEGRASYONU.md` ve `SUNUCU-BAGLANTI-KONTROLU.md` içindedir.
+Identity API Worker `API_BASE` adresinde çalışmalıdır (Mikro-Klima Worker'ı). İki GitHub hesabının origin'leri (`https://mhaforevye.github.io`, `https://frovyes.github.io`) Worker'ın **kendi kodunda sabittir** (`MikroKlimaKontrolMerkezi/worker/origins.js`); Cloudflare panelindeki `ID_ORIGIN` gibi değişkenler yalnızca ek adres içindir. `OPTIONS` istekleri, `GET, POST, PATCH, DELETE, OPTIONS` yöntemleri ve `Authorization, Content-Type` başlıkları desteklenir; CORS başlıkları hata yanıtlarında da bulunur. Ayrıntılar `MIKRO-KLIMA-WORKER-CORS-ENTEGRASYONU.md` ve `SUNUCU-BAGLANTI-KONTROLU.md` içindedir.
 
 ## Nexus Banka bağlantısı
 

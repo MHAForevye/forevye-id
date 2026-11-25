@@ -6,7 +6,7 @@ Bu proje GitHub Pages üzerinde çalışan statik ön yüzdür. Kimlik işlemler
 
 - `MOCK: false` olmalı.
 - `API_BASE`, `/identity/*` uçlarını sunan HTTPS Worker adresi olmalı; sonunda `/` bulunmamalı.
-- Worker CORS allowlist'inde `https://mhaforevye.github.io` origin'i bulunmalı.
+- Worker CORS allowlist'inde `https://mhaforevye.github.io` (ve ikinci GitHub hesabı `https://frovyes.github.io`) bulunmalı. Bunlar Mikro-Klima Worker'ında koda gömülüdür (`worker/origins.js`); panel değişkenine bağlı değildir. Deploy sonrası doğrulama: Mikro-Klima deposunda `npm run verify:live`.
 - `OPTIONS` preflight, `GET, POST, PATCH, DELETE, OPTIONS` yöntemleri ve `Authorization, Content-Type` başlıkları desteklenmeli. Başarılı ve hatalı yanıtların tümünde CORS başlıkları bulunmalı.
 - D1 binding ve Identity şeması gerçek Identity Worker'ın kullandığı veritabanında hazır olmalı. E-posta doğrulaması etkinse e-posta sağlayıcısının secret/variable ayarları da Worker tarafında tanımlanmalı.
 
