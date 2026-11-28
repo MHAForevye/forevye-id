@@ -5,6 +5,17 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fmt = (t) => (t ? new Date(t).toLocaleString("tr-TR") : "—");
   const app = (html) => { $("#app").innerHTML = html; };
+  /* SVG ikon seti — 24px ızgara, 1.75 kontur */
+  const ICO = {
+    profile: '<circle cx="12" cy="8.5" r="3.75"/><path d="M4.75 19.5c1.2-3.3 4-5 7.25-5s6.05 1.7 7.25 5"/>',
+    security: '<path d="M12 3.25 5 6v5.6c0 4.4 3 8 7 9.15 4-1.15 7-4.75 7-9.15V6l-7-2.75Z"/><path d="m9.25 12.25 1.9 1.9 3.6-3.9"/>',
+    apps: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6"/>',
+    trash: '<path d="M4.5 7h15M9.5 7V4.75h5V7M6.5 7l.8 12.25h9.4L17.5 7M10.25 10.75v5M13.75 10.75v5"/>',
+    logout: '<path d="M14.5 4.75H18a1.25 1.25 0 0 1 1.25 1.25v12A1.25 1.25 0 0 1 18 19.25h-3.5M10 8l-4 4 4 4M6 12h9"/>',
+    alert: '<path d="M12 4 3.5 19h17L12 4Z"/><path d="M12 10v4M12 16.75v.01"/>'
+  };
+  const icon = (n, cls) => `<svg class="ico${cls ? " " + cls : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICO[n]}</svg>`;
+  const LOGO = `<span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M10 7.5h12.5M10 7.5v17M10 15.5h9" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><circle cx="23" cy="23" r="2.1" fill="currentColor"/></svg></span>`;
   let user = null;
   const ctx = {};
   let lastMail = 0;
@@ -70,7 +81,7 @@
       finally { if (b && document.contains(b)) b.disabled = false; mailCheck(); }
     });
   }
-  const authShell = (inner) => `<div class="auth"><div class="card"><div class="brand" style="margin-bottom:1.1rem"><span class="logo">F</span>FOREVYE ID</div>${inner}${!C.MOCK && serverState.state === "offline" ? `<p class="hint">Giriş, kayıt ve doğrulama işlemleri için kimlik sunucusu bağlantısı gereklidir. Üstteki bağlantı durumundan tekrar deneyebilirsiniz.</p>` : ""}</div></div>`;
+  const authShell = (inner) => `<div class="auth"><div class="card"><div class="brand" style="margin-bottom:1.1rem">${LOGO}<span class="brand-name">FOREVYE <b>ID</b></span></div>${inner}${!C.MOCK && serverState.state === "offline" ? `<p class="hint">Giriş, kayıt ve doğrulama işlemleri için kimlik sunucusu bağlantısı gereklidir. Üstteki bağlantı durumundan tekrar deneyebilirsiniz.</p>` : ""}</div></div>`;
   const pwHint = `<div class="hint">En az ${C.PASSWORD_MIN_LENGTH} karakter, harf ve rakam içermeli.</div>`;
 
   /* ---------------- Kimlik ekranları ---------------- */
@@ -151,13 +162,13 @@
 
   /* ---------------- Oturum açmış düzen ---------------- */
   function layout(active, inner) {
-    const link = (h, t) => `<a href="#${h}" class="${active === h ? "on" : ""}">${t}</a>`;
-    app(`<div class="shell"><nav class="side"><div class="brand" style="margin-bottom:1rem"><span class="logo">F</span>FOREVYE ID</div>
-      ${link("/profil", "Profil")}${link("/guvenlik", "Güvenlik")}${link("/uygulamalar", "Uygulamalar")}${link("/hesap-sil", "Hesabı sil")}
-      <div class="grow"></div><a href="#" id="lo">Çıkış yap</a></nav><main>${inner}</main></div>`);
+    const link = (h, t, ic) => `<a href="#${h}" class="${active === h ? "on" : ""}"${active === h ? ' aria-current="page"' : ""}>${icon(ic)}<span>${t}</span></a>`;
+    app(`<div class="shell"><nav class="side" aria-label="Hesap menüsü"><div class="brand" style="margin-bottom:1rem">${LOGO}<span class="brand-name">FOREVYE <b>ID</b></span></div>
+      ${link("/profil", "Profil", "profile")}${link("/guvenlik", "Güvenlik", "security")}${link("/uygulamalar", "Uygulamalar", "apps")}${link("/hesap-sil", "Hesabı sil", "trash")}
+      <div class="grow"></div><a href="#" id="lo" class="lo">${icon("logout")}<span>Çıkış yap</span></a></nav><main>${inner}</main></div>`);
     $("#lo").onclick = async (e) => { e.preventDefault(); await api.logout(); user = null; go("/giris"); };
   }
-  const avatar = (u) => `<div class="avatar">${u.photo ? `<img alt="Profil fotoğrafı" src="${esc(u.photo)}">` : "F"}</div>`;
+  const avatar = (u) => `<div class="avatar">${u.photo ? `<img alt="Profil fotoğrafı" src="${esc(u.photo)}">` : icon("profile", "avatar-ph")}</div>`;
 
   /* ---------------- Profil ---------------- */
   async function vProfile() {
@@ -294,7 +305,7 @@
     layout("/uygulamalar", `<h1>Uygulamalarım</h1>
       <p class="mut">Bağlı uygulamalarını, izinlerini ve uygulama erişimlerini buradan yönetebilirsin.</p>
       <section class="card wide app-load-error" role="alert" aria-live="assertive">
-        <div class="app-load-error-mark" aria-hidden="true">!</div>
+        <div class="app-load-error-mark" aria-hidden="true">${icon("alert")}</div>
         <div class="app-load-error-body">
           <span class="badge warn">${esc(status)}</span>
           <h2>Uygulama listesi yüklenemedi</h2>
